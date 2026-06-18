@@ -6,9 +6,12 @@ Open: http://127.0.0.1:8000
 """
 import asyncio
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Windows requires ProactorEventLoop for subprocess support
 if sys.platform == "win32":
@@ -25,6 +28,28 @@ from config import OUTPUT_DIR, YOUTUBE_CLIENT_SECRETS, YOUTUBE_TOKEN_FILE, setup
 
 setup_logging()
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+# Warn if token.json is missing the new spreadsheets scope (needs re-auth)
+def _check_token_scopes() -> None:
+    import json as _j
+    if not YOUTUBE_TOKEN_FILE.exists():
+        return
+    try:
+        scopes = _j.loads(YOUTUBE_TOKEN_FILE.read_text(encoding="utf-8")).get("scopes", [])
+        missing = [s for s in [
+            "https://www.googleapis.com/auth/spreadsheets",
+        ] if s not in scopes]
+        if missing:
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                "token.json is missing scopes: %s — "
+                "delete token.json and restart to re-authenticate (opens browser once).",
+                missing,
+            )
+    except Exception:
+        pass
+
+_check_token_scopes()
 
 app = FastAPI(title="ytauto Dashboard")
 app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
@@ -158,6 +183,15 @@ def _fetch_channel_info() -> dict:
         "subscriber_count": int(stats.get("subscriberCount", 0)),
         "video_count":      int(stats.get("videoCount", 0)),
     }
+
+
+@app.post("/api/youtube/reauth")
+async def youtube_reauth() -> JSONResponse:
+    """Delete token.json and re-run full OAuth to pick up new scopes."""
+    if YOUTUBE_TOKEN_FILE.exists():
+        YOUTUBE_TOKEN_FILE.unlink()
+        logger.info("token.json deleted — re-auth required")
+    return await youtube_connect()
 
 
 @app.post("/api/youtube/connect")
@@ -522,6 +556,94 @@ async def _short_task(slug: str, video_dir: Path) -> None:
     except Exception as exc:
         await _broadcast({"type": "log", "level": "ERROR",
                           "text": f"Short failed ({slug}): {exc}"})
+
+
+@app.get("/api/sheets/url")
+async def sheets_url() -> JSONResponse:
+    try:
+        from sheets import get_sheet_url
+        url = get_sheet_url()
+        return JSONResponse({"url": url})
+    except Exception as exc:
+        return JSONResponse({"url": "", "error": str(exc)})
+
+
+@app.post("/api/sheets/sync/{slug}")
+async def sheets_sync(slug: str) -> JSONResponse:
+    video_dir = OUTPUT_DIR / slug
+    if not video_dir.exists():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    asyncio.create_task(_sheets_sync_task(slug, video_dir))
+    return JSONResponse({"status": "started"})
+
+
+async def _sheets_sync_task(slug: str, video_dir: Path) -> None:
+    try:
+        keyword = slug.replace("_", " ")
+        from sheets import sync_video
+        url = await asyncio.to_thread(sync_video, keyword, video_dir)
+        await _broadcast({"type": "sheets_sync_done", "slug": slug, "url": url})
+        await _broadcast({"type": "log", "level": "INFO",
+                          "text": f"Sheets synced for {slug}: {url}"})
+    except Exception as exc:
+        await _broadcast({"type": "log", "level": "ERROR",
+                          "text": f"Sheets sync failed ({slug}): {exc}"})
+
+
+@app.post("/api/sheets/sync-all")
+async def sheets_sync_all() -> JSONResponse:
+    asyncio.create_task(_sheets_sync_all_task())
+    return JSONResponse({"status": "started"})
+
+
+async def _sheets_sync_all_task() -> None:
+    from sheets import sync_video
+    from config import OUTPUT_DIR as _od
+    count = 0
+    for d in sorted(_od.iterdir()):
+        if d.is_dir() and (d / "seo.json").exists():
+            try:
+                await asyncio.to_thread(sync_video, d.name.replace("_", " "), d)
+                count += 1
+            except Exception as exc:
+                logger.warning(f"Sheets sync failed for {d.name}: {exc}")
+    await _broadcast({"type": "log", "level": "INFO",
+                      "text": f"Sheets: synced {count} videos"})
+
+
+@app.post("/api/telegram/test")
+async def telegram_test() -> JSONResponse:
+    try:
+        from telegram_bot import test_connection
+        ok = await asyncio.to_thread(test_connection)
+        return JSONResponse({"ok": ok})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+
+
+@app.get("/api/optimizer/{slug}")
+async def optimizer_audit(slug: str) -> JSONResponse:
+    video_dir = OUTPUT_DIR / slug
+    if not video_dir.exists():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        from channel_optimizer import run_full_audit
+        uploaded_p = video_dir / "uploaded.txt"
+        video_id   = uploaded_p.read_text(encoding="utf-8").strip() if uploaded_p.exists() else None
+        keyword    = slug.replace("_", " ")
+        result     = await asyncio.to_thread(run_full_audit, video_dir, keyword, video_id)
+        return JSONResponse(result)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/optimizer/ranks/all")
+async def optimizer_ranks() -> JSONResponse:
+    try:
+        from channel_optimizer import get_all_ranks
+        return JSONResponse(get_all_ranks())
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.post("/api/run")

@@ -1,0 +1,38 @@
+# ── Generated output (mount as volume at /app/output) ─────────────────────────
+output/
+
+# ── Secrets (inject via environment variables, never bake into image) ──────────
+.env
+token.json
+client_secrets.json
+
+# ── Large media files ──────────────────────────────────────────────────────────
+*.mp4
+*.mp3
+*.wav
+*.srt
+
+# ── Python cache ───────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+
+# ── IDE / OS ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Git ────────────────────────────────────────────────────────────────────────
+.git/
+.gitignore

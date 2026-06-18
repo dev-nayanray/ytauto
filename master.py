@@ -58,6 +58,11 @@ def _run_keyword(
     from seo import generate_seo
     from thumb import create_thumbnail
     from upload import upload_video
+    from telegram_bot import (
+        notify_stage, notify_video_complete, notify_error,
+    )
+    from sheets import sync_video
+    from channel_optimizer import run_full_audit
 
     slug = _slugify(keyword)
     out_dir = OUTPUT_DIR / slug
@@ -70,13 +75,18 @@ def _run_keyword(
     logger.info(sep)
 
     try:
+        # research stage already done in main() — notify start of this keyword
+        notify_stage(keyword, "research", 1)
+
         # ── 1. Script ──────────────────────────────────────────────────────────
         script_path = out_dir / "script.txt"
         generate_script(keyword, script_path)
+        notify_stage(keyword, "script", 2)
 
         # ── 2. Voice ───────────────────────────────────────────────────────────
         voice_path = out_dir / "voice.mp3"
         generate_voice(script_path, voice_path)
+        notify_stage(keyword, "voice", 3)
 
         # ── 3. Visuals (Pexels clips) ──────────────────────────────────────────
         clips_dir = out_dir / "clips"
@@ -84,42 +94,53 @@ def _run_keyword(
         if not clips:
             logger.error(f"No Pexels clips available for '{keyword}'. Skipping keyword.")
             return False
+        notify_stage(keyword, "visuals", 4)
 
         # ── 4. Assemble ────────────────────────────────────────────────────────
         video_path = out_dir / "video.mp4"
         work_dir = out_dir / "work"
         assemble_video(clips, voice_path, video_path, work_dir)
+        notify_stage(keyword, "assemble", 5)
 
         # ── 5. SEO metadata ────────────────────────────────────────────────────
         seo_path = out_dir / "seo.json"
         seo = generate_seo(keyword, script_path, seo_path)
+        notify_stage(keyword, "seo", 6)
 
         # ── 6. Thumbnail ───────────────────────────────────────────────────────
         thumb_path = out_dir / "thumbnail.jpg"
         create_thumbnail(video_path, seo["title"], thumb_path)
+        notify_stage(keyword, "thumbnail", 7)
 
         # ── 7. Upload (skipped in dry-run) ─────────────────────────────────────
+        video_id = None
         if dry_run:
             logger.info("[DRY-RUN] Skipping YouTube upload.")
         else:
             if video_index >= len(publish_times):
                 logger.warning("Publish schedule exhausted — skipping upload.")
                 return True
-            upload_video(
+            video_id = upload_video(
                 video_path=video_path,
                 thumbnail_path=thumb_path,
                 seo=seo,
                 publish_at=publish_times[video_index],
                 output_dir=out_dir,
             )
+            notify_video_complete(keyword, seo.get("title", keyword), video_id,
+                                  thumbnail_path=thumb_path)
 
-        # ── 8. Google Drive backup ─────────────────────────────────────────
+        # ── 8. Google Drive full backup + Sheets sync + rank audit ─────────────
         try:
-            from gdrive import upload_to_drive
-            title = seo.get("title", keyword)
-            upload_to_drive(video_path, title, out_dir)
+            from gdrive import backup_full_folder
+            from telegram_bot import notify_drive_backup
+            folder_url = backup_full_folder(out_dir, keyword)
+            notify_drive_backup(keyword, folder_url)
+            # Sync to Google Sheets + run SEO audit
+            audit = run_full_audit(out_dir, keyword, video_id if not dry_run else None)
+            sync_video(keyword, out_dir, drive_folder_url=folder_url, rank=audit.get("rank"))
         except Exception as exc:
-            logger.warning(f"Google Drive upload skipped: {exc}")
+            logger.warning(f"Drive/Sheets/rank failed: {exc}")
 
         return True
 
@@ -128,6 +149,7 @@ def _run_keyword(
             f"Pipeline failed for '{keyword}': {exc}",
             exc_info=True,
         )
+        notify_error(keyword, "pipeline", str(exc))
         return False
 
 
@@ -179,6 +201,13 @@ def main() -> None:
         publish_times = get_publish_schedule(count)
         for i, pt in enumerate(publish_times):
             logger.info(f"  Video {i + 1} scheduled for {pt.strftime('%Y-%m-%d %H:%M UTC')}")
+
+    # ── Notify pipeline start ──────────────────────────────────────────────────
+    try:
+        from telegram_bot import notify_pipeline_start
+        notify_pipeline_start(count)
+    except Exception:
+        pass
 
     # ── Per-keyword pipeline ───────────────────────────────────────────────────
     successes = 0

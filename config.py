@@ -84,6 +84,13 @@ MAX_UPLOADS_PER_DAY: int = 6
 YOUTUBE_CATEGORY_ID: str = "28"   # Science & Technology
 YOUTUBE_PRIVACY: str = os.environ.get("YOUTUBE_PRIVACY", "public")  # "public" or "private"
 
+# ── Telegram Bot ───────────────────────────────────────────────────────────────
+TELEGRAM_BOT_TOKEN: str = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID:   str = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+# ── Google Sheets ──────────────────────────────────────────────────────────────
+GOOGLE_SHEET_ID: str = os.environ.get("GOOGLE_SHEET_ID", "")
+
 # ── Logging ────────────────────────────────────────────────────────────────────
 LOG_FILE: Path = BASE_DIR / "log.txt"
 

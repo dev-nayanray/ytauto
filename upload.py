@@ -9,6 +9,9 @@ Upload behaviour:
     Override with YOUTUBE_PRIVACY=private in .env to schedule manually.
   • The upload uses the resumable protocol (safe for large files / slow links).
   • Skips upload if output_dir/uploaded.txt already exists (idempotent).
+
+NOTE: If you add new scopes to SCOPES, delete token.json and re-run OAuth so the
+token is re-issued with the updated scope set.
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -34,6 +37,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube",
     "https://www.googleapis.com/auth/yt-analytics.readonly",
     "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/spreadsheets",
 ]
 
 

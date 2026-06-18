@@ -33,10 +33,18 @@ FRAME_SEEK = "00:00:05"   # extract frame at this timestamp
 BRAND_LABEL = "CODE CREATIVITY BD"
 
 _FONT_CANDIDATES = [
-    r"C:\Windows\Fonts\arialbd.ttf",   # Arial Bold
+    # Windows
+    r"C:\Windows\Fonts\arialbd.ttf",
     r"C:\Windows\Fonts\arial.ttf",
-    r"C:\Windows\Fonts\segoeuib.ttf",  # Segoe UI Bold
+    r"C:\Windows\Fonts\segoeuib.ttf",
     r"C:\Windows\Fonts\segoeui.ttf",
+    # Linux / Docker (fonts-liberation, fonts-freefont-ttf, fonts-dejavu-core)
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ]
 
 
