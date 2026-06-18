@@ -1,0 +1,18 @@
+{
+  "channel_niche": "AI & Tech",
+  "channel_description": "We create AI & tech tutorials that help people work smarter.",
+  "seed_topics": [
+    "AI tools",
+    "ChatGPT"
+  ],
+  "default_count": 1,
+  "voice_style": "professional",
+  "dry_run_default": false,
+  "publish_delay_hours": 2,
+  "auto_reply_enabled": true,
+  "auto_reply_max_per_video": 5,
+  "auto_reply_tone": "friendly",
+  "auto_reply_on_upload": true,
+  "auto_short_on_upload": true,
+  "short_hook_style": "question"
+}

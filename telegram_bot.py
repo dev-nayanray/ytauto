@@ -143,6 +143,18 @@ def notify_daily_summary(stats: dict) -> None:
     )
 
 
+def notify_milestone(title: str, views: int, milestone: int, video_id: str) -> None:
+    """Notify when a video reaches a view milestone."""
+    emoji = "🏆" if milestone >= 10000 else "🎉" if milestone >= 1000 else "🌱"
+    send(
+        f"{emoji} <b>Milestone hit!</b>\n\n"
+        f"<b>{title[:60]}</b>\n"
+        f"just reached <b>{milestone:,} views</b> 🎊\n"
+        f"(Current: {views:,} views)\n\n"
+        f"<a href='https://youtube.com/watch?v={video_id}'>Watch video →</a>"
+    )
+
+
 def test_connection() -> bool:
     """Send a test message. Returns True if successful."""
     ok = send("🤖 <b>ytauto Bot Connected!</b>\n✅ Notifications are working.")

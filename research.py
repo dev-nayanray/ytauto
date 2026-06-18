@@ -9,6 +9,7 @@ Strategy:
   5. Optionally filter by YouTube search result count (requires YOUTUBE_API_KEY).
   6. Pad with hand-curated fallbacks if sources return too few results.
 """
+import datetime
 import logging
 import re
 import time
@@ -16,68 +17,74 @@ from typing import Optional
 
 from config import OUTPUT_DIR, YOUTUBE_API_KEY, CHANNEL_NICHE
 
+_YEAR = str(datetime.datetime.now().year)
+
 logger = logging.getLogger(__name__)
 
-SEED_TOPICS = [
-    "artificial intelligence",
-    "AI tools",
-    "machine learning tutorial",
-    "ChatGPT tips",
-    "Python automation",
-    "AI productivity",
-    "how to use AI",
-    "tech explained",
+_DEFAULT_SEED_TOPICS = [
+    "artificial intelligence", "AI tools", "machine learning tutorial",
+    "ChatGPT tips", "Python automation", "AI productivity",
+    "how to use AI", "tech explained",
 ]
+
+def _load_seed_topics() -> list[str]:
+    try:
+        import channel_settings
+        return channel_settings.get("seed_topics") or _DEFAULT_SEED_TOPICS
+    except Exception:
+        return _DEFAULT_SEED_TOPICS
+
+SEED_TOPICS = _load_seed_topics()
 
 # Hard-coded evergreen fallbacks — always original, always useful
 # High-CPM monetizable topics: AI tools, make money, business automation,
 # investing, software tutorials ($15-40 CPM niches)
 FALLBACK_KEYWORDS = [
     # High CPM: AI tools for business/money
-    "best AI tools to make money online in 2025",
+    "best AI tools to make money online in __YEAR__",
     "how to use ChatGPT to make $1000 a month",
-    "AI side hustles that actually pay in 2025",
+    "AI side hustles that actually pay in __YEAR__",
     "how to start an AI automation business from scratch",
     "make money online with AI tools beginners guide",
     "best AI tools for freelancers to earn more money",
     "how to use AI to grow your business fast",
-    "AI tools that replace expensive software in 2025",
+    "AI tools that replace expensive software in __YEAR__",
     # High CPM: comparisons and reviews
-    "ChatGPT vs Claude vs Gemini which AI is best 2025",
-    "best free AI tools better than paid alternatives 2025",
+    "ChatGPT vs Claude vs Gemini which AI is best __YEAR__",
+    "best free AI tools better than paid alternatives __YEAR__",
     "I tested 10 AI writing tools here are the results",
-    "best AI image generators compared honest review 2025",
-    "top AI coding assistants compared for developers 2025",
-    "best AI video generators that actually work in 2025",
+    "best AI image generators compared honest review __YEAR__",
+    "top AI coding assistants compared for developers __YEAR__",
+    "best AI video generators that actually work in __YEAR__",
     # High CPM: tutorials on specific tools
     "how to use ChatGPT to write better code faster",
-    "complete Claude AI tutorial for beginners 2025",
+    "complete Claude AI tutorial for beginners __YEAR__",
     "how to use Perplexity AI for research and studying",
-    "Microsoft Copilot complete beginner guide 2025",
-    "how to use Google Gemini for productivity 2025",
-    "Midjourney vs DALL-E vs Stable Diffusion comparison 2025",
+    "Microsoft Copilot complete beginner guide __YEAR__",
+    "how to use Google Gemini for productivity __YEAR__",
+    "Midjourney vs DALL-E vs Stable Diffusion comparison __YEAR__",
     # Productivity and automation
     "automate your work with AI and save 10 hours a week",
     "how to build an AI workflow for content creation",
-    "no-code AI automation tools for small business 2025",
+    "no-code AI automation tools for small business __YEAR__",
     "how to use Zapier and AI to automate your business",
     "AI productivity system that changed how I work",
     # Learning and skills
     "learn Python in 30 days with AI assistance",
-    "how AI is changing software development in 2025",
-    "best way to learn AI and machine learning in 2025",
+    "how AI is changing software development in __YEAR__",
+    "best way to learn AI and machine learning in __YEAR__",
     "prompt engineering masterclass for beginners",
     "how to use AI to learn any new skill 10x faster",
     # Evergreen tech tutorials
     "Python automation tutorial complete beginners guide",
     "machine learning explained simply for beginners",
-    "how to build a chatbot without coding in 2025",
+    "how to build a chatbot without coding in __YEAR__",
     "local AI models you can run free on your computer",
-    "open source AI tools better than ChatGPT in 2025",
+    "open source AI tools better than ChatGPT in __YEAR__",
     # Viral-format topics
     "AI tools I wish I knew sooner complete guide",
     "stop using Google for research use these AI tools instead",
-    "the truth about AI replacing jobs in 2025",
+    "the truth about AI replacing jobs in __YEAR__",
     "how I use AI to work 4 hours a day remotely",
     "AI tools that will make you rich if you start now",
 ]
@@ -178,6 +185,9 @@ def get_trending_keywords(count: int = 5) -> list[str]:
     Prefers keywords that have NOT been assembled yet so each run
     generates fresh content.  Falls back gracefully on any error.
     """
+    # Always refresh seed topics in case settings changed since module load
+    global SEED_TOPICS
+    SEED_TOPICS = _load_seed_topics()
     logger.info("Starting keyword research…")
 
     candidates: list[tuple[str, float]] = []
@@ -233,7 +243,8 @@ def get_trending_keywords(count: int = 5) -> list[str]:
         if fb not in filtered:
             filtered.append(fb)
 
-    result = filtered[:count]
+    year = str(datetime.datetime.now().year)
+    result = [kw.replace("__YEAR__", year) for kw in filtered[:count]]
     logger.info(f"Final keywords ({len(result)}): {result}")
     return result
 

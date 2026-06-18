@@ -87,8 +87,9 @@ def generate_optimization_tips(output_dir: Path) -> list[str]:
         tips.append("Title is long (>70 chars) — YouTube truncates after ~70; move key info to the front")
     if not any(c.isupper() for c in title):
         tips.append("No uppercase in title — use 1-2 CAPS power words to boost CTR (e.g. 'PROVEN', 'BEST')")
-    if "2025" not in title and "2024" not in title:
-        tips.append("Add year '2025' to title — year tags significantly improve search relevance and CTR")
+    _year = str(datetime.now().year)
+    if _year not in title and str(datetime.now().year - 1) not in title:
+        tips.append(f"Add year '{_year}' to title — year tags significantly improve search relevance and CTR")
 
     # Description checks
     if len(desc) < 200:
@@ -127,6 +128,65 @@ def generate_optimization_tips(output_dir: Path) -> list[str]:
     return tips
 
 
+def _compute_seo_score(output_dir: Path, rank: int | None) -> int:
+    """Score 0-100 based on title, description, tags, thumbnail, and rank."""
+    score = 0
+    seo_path = output_dir / "seo.json"
+    if not seo_path.exists():
+        return 0
+    try:
+        seo = json.loads(seo_path.read_text(encoding="utf-8"))
+    except Exception:
+        return 0
+
+    title = seo.get("title", "")
+    desc  = seo.get("description", "")
+    tags  = seo.get("tags", [])
+
+    # Title (25 pts)
+    if 40 <= len(title) <= 70:
+        score += 15
+    elif len(title) > 20:
+        score += 8
+    if any(c.isupper() for c in title):
+        score += 5
+    if str(datetime.now().year) in title or str(datetime.now().year - 1) in title:
+        score += 5
+
+    # Description (30 pts)
+    if len(desc) >= 400:
+        score += 20
+    elif len(desc) >= 200:
+        score += 12
+    elif len(desc) >= 50:
+        score += 5
+    if "subscribe" in desc.lower():
+        score += 5
+    if "http" in desc:
+        score += 5
+
+    # Tags (20 pts)
+    tag_score = min(20, len(tags) * 2)
+    score += tag_score
+
+    # Thumbnail (10 pts)
+    if (output_dir / "thumbnail.jpg").exists():
+        score += 10
+
+    # Rank (15 pts)
+    if rank is not None:
+        if rank <= 3:
+            score += 15
+        elif rank <= 10:
+            score += 12
+        elif rank <= 20:
+            score += 8
+        elif rank <= 50:
+            score += 4
+
+    return min(100, score)
+
+
 def run_full_audit(output_dir: Path, keyword: str, video_id: str | None = None) -> dict:
     """
     Run rank check + generate tips for a video. Returns a dict with results.
@@ -136,12 +196,15 @@ def run_full_audit(output_dir: Path, keyword: str, video_id: str | None = None) 
         rank = check_video_rank(video_id, keyword)
         record_rank(output_dir, keyword, rank)
 
-    tips = generate_optimization_tips(output_dir)
+    suggestions = generate_optimization_tips(output_dir)
+    seo_score   = _compute_seo_score(output_dir, rank)
     return {
-        "keyword":  keyword,
-        "video_id": video_id,
-        "rank":     rank,
-        "tips":     tips,
+        "keyword":    keyword,
+        "video_id":   video_id,
+        "rank":       rank,
+        "suggestions": suggestions,
+        "tips":        suggestions,   # backwards compat alias
+        "seo_score":  seo_score,
         "audited_at": datetime.now(timezone.utc).isoformat(),
     }
 

@@ -96,8 +96,14 @@ Write the script now:"""
 def _generate_voice(script: str, output_path: Path) -> None:
     if output_path.exists():
         return
-    from voice import synthesise
-    synthesise(script, output_path)
+    import tempfile
+    from voice import generate_voice
+    tmp = Path(tempfile.mktemp(suffix=".txt"))
+    tmp.write_text(script, encoding="utf-8")
+    try:
+        generate_voice(tmp, output_path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _download_portrait_clips(keyword: str, clips_dir: Path) -> None:

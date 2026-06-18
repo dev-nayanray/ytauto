@@ -7,6 +7,7 @@ Open: http://127.0.0.1:8000
 import asyncio
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -51,13 +52,48 @@ def _check_token_scopes() -> None:
 
 _check_token_scopes()
 
-app = FastAPI(title="ytauto Dashboard")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app_: FastAPI):  # type: ignore[override]
+    tasks = [
+        asyncio.create_task(_start_telegram_listener()),
+        asyncio.create_task(_scheduler_loop()),
+        asyncio.create_task(_milestone_checker_loop()),
+    ]
+    yield
+    for t in tasks:
+        t.cancel()
+
+app = FastAPI(title="ytauto Dashboard", lifespan=lifespan)
 app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
 _tmpl = Jinja2Templates(directory=str(BASE / "templates"))
 
 _ws_clients: list[WebSocket] = []
 _running: bool = False
+_stop_requested: bool = False
 _oauth_running: bool = False
+_current_keyword: str = ""
+_cached_analytics: dict = {}
+_active_tasks: dict[str, dict] = {}   # task_id -> {type, slug, description, started_at}
+
+
+# ── Active task tracker ────────────────────────────────────────────────────────
+
+import time as _time
+
+async def _task_start(task_id: str, task_type: str, slug: str, description: str) -> None:
+    _active_tasks[task_id] = {
+        "type": task_type, "slug": slug,
+        "description": description,
+        "started_at": _time.time(),
+    }
+    await _broadcast({"type": "tasks_update", "tasks": list(_active_tasks.values())})
+
+
+async def _task_end(task_id: str) -> None:
+    _active_tasks.pop(task_id, None)
+    await _broadcast({"type": "tasks_update", "tasks": list(_active_tasks.values())})
 
 
 # ── Broadcast ──────────────────────────────────────────────────────────────────
@@ -115,6 +151,20 @@ def _scan_videos() -> list[dict[str, Any]]:
             v["publish_at"] = (d / "publish_at.txt").read_text(encoding="utf-8").strip()
         if (d / "video.mp4").exists():
             v["size_mb"] = round((d / "video.mp4").stat().st_size / 1_048_576, 1)
+        # Short metadata
+        short_dir = d / "short"
+        v["has_short"]       = (short_dir / "video.mp4").exists()
+        v["short_video_id"]  = (short_dir / "uploaded.txt").read_text(encoding="utf-8").strip() \
+                                if (short_dir / "uploaded.txt").exists() else None
+        v["short_script"]    = (short_dir / "script.txt").exists()
+        # Upload date from uploaded.txt modification time
+        uploaded_file = d / "uploaded.txt"
+        if uploaded_file.exists():
+            import datetime as _dtt
+            v["upload_date"] = _dtt.datetime.fromtimestamp(
+                uploaded_file.stat().st_mtime).strftime("%Y-%m-%d")
+        else:
+            v["upload_date"] = None
         result.append(v)
     return result
 
@@ -179,9 +229,12 @@ def _fetch_channel_info() -> dict:
     return {
         "channel_id":       ch["id"],
         "title":            snippet["title"],
-        "thumbnail":        snippet.get("thumbnails", {}).get("default", {}).get("url"),
+        "thumbnail":        (snippet.get("thumbnails", {}).get("high", {}).get("url")
+                             or snippet.get("thumbnails", {}).get("default", {}).get("url")),
         "subscriber_count": int(stats.get("subscriberCount", 0)),
+        "subscriberCount":  str(stats.get("subscriberCount", 0)),  # camelCase alias for template
         "video_count":      int(stats.get("videoCount", 0)),
+        "view_count":       int(stats.get("viewCount", 0)),
     }
 
 
@@ -256,6 +309,7 @@ async def manual_upload(slug: str) -> JSONResponse:
 
 
 async def _manual_upload_task(slug: str, video_dir: Path) -> None:
+    await _task_start(f"upload:{slug}", "upload", slug, f"Uploading: {slug.replace('_',' ')}")
     try:
         label = slug.replace("_", " ")
         await _broadcast({"type": "log", "level": "INFO",
@@ -279,6 +333,8 @@ async def _manual_upload_task(slug: str, video_dir: Path) -> None:
     except Exception as exc:
         await _broadcast({"type": "log", "level": "ERROR",
                           "text": f"Manual upload failed for {slug}: {exc}"})
+    finally:
+        await _task_end(f"upload:{slug}")
 
 
 def _blocking_upload(
@@ -291,11 +347,13 @@ def _blocking_upload(
 
 @app.get("/api/youtube/analytics")
 async def get_youtube_analytics() -> JSONResponse:
+    global _cached_analytics
     if not YOUTUBE_TOKEN_FILE.exists():
         return JSONResponse({"connected": False, "reason": "no_token"})
     try:
         data = await asyncio.to_thread(_fetch_full_analytics)
-        return JSONResponse({"connected": True, **data})
+        _cached_analytics = {"connected": True, **data}
+        return JSONResponse(_cached_analytics)
     except Exception as exc:
         return JSONResponse({"connected": False, "reason": str(exc)})
 
@@ -390,59 +448,156 @@ def _fetch_full_analytics() -> dict:
                 })
         except Exception:
             pass
+    # Normalised summary used by dashboard + Telegram bot
+    watch_hours = round(channel_analytics.get("estimatedMinutesWatched", 0) / 60, 1)
+    ctr_raw     = channel_analytics.get("impressionClickThroughRate", 0) or 0
+    avg_dur_s   = int(channel_analytics.get("averageViewDuration", 0) or 0)
+    avg_dur_str = f"{avg_dur_s // 60}m {avg_dur_s % 60}s" if avg_dur_s else "—"
+
+    summary = {
+        "total_views":       channel_analytics.get("views", 0) or channel_data["total_views"],
+        "watch_hours":       watch_hours,
+        "subscribers":       channel_data["subscribers"],
+        "estimated_revenue": round(channel_analytics.get("estimatedRevenue", 0.0) or 0.0, 2),
+        "ctr":               round(ctr_raw * 100, 1),
+        "avg_view_duration": avg_dur_str,
+    }
+    ypp = {
+        "eligible":         channel_data["subscribers"] >= 1000 and watch_hours >= 4000,
+        "watch_hours":      watch_hours,
+        "watch_hours_pct":  min(100.0, round(watch_hours / 4000 * 100, 1)),
+        "subscribers":      channel_data["subscribers"],
+        "subscribers_pct":  min(100.0, round(channel_data["subscribers"] / 1000 * 100, 1)),
+    }
+
+    # Add per-video fields the frontend expects
+    for v in video_stats:
+        slug = v.get("slug", "")
+        v["keyword"]       = slug.replace("_", " ")
+        v["drive_backed_up"] = (OUTPUT_DIR / slug / "drive_id.txt").exists() if slug else False
+        v["watch_minutes"] = None   # per-video watch data requires Analytics API per-video query
+        v["ctr"]           = None
+        v["estimated_revenue"] = None
+        v["short_url"]     = (f"https://youtube.com/shorts/{(OUTPUT_DIR / slug / 'short' / 'uploaded.txt').read_text().strip()}"
+                               if slug and (OUTPUT_DIR / slug / "short" / "uploaded.txt").exists() else None)
+
     return {
-        "channel": channel_data,
-        "videos": video_stats,
+        "channel":          channel_data,
+        "videos":           video_stats,
         "channel_analytics": channel_analytics,
-        "monetization": monetization,
+        "monetization":     monetization,
+        "summary":          summary,
+        "ypp":              ypp,
     }
 
 
 @app.get("/api/settings")
 async def get_settings() -> JSONResponse:
-    env_path = BASE / ".env"
-    settings: dict[str, str] = {}
-    if env_path.exists():
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, val = line.partition("=")
-            key = key.strip()
-            val = val.strip().strip('"').strip("'")
-            is_secret = any(x in key.upper() for x in ["KEY", "SECRET", "TOKEN", "PASSWORD"])
-            if is_secret and len(val) > 8:
-                settings[key] = val[:4] + "…" + val[-4:]
-            else:
-                settings[key] = val
-    return JSONResponse(settings)
+    import channel_settings
+    return JSONResponse(channel_settings.load())
 
 
 @app.post("/api/settings")
-async def save_settings(request: Request) -> JSONResponse:
+async def save_settings_endpoint(request: Request) -> JSONResponse:
+    import channel_settings
     data = await request.json()
-    env_path = BASE / ".env"
-    lines: list[str] = []
-    if env_path.exists():
-        lines = env_path.read_text(encoding="utf-8").splitlines()
-    updated: set[str] = set()
-    new_lines: list[str] = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            new_lines.append(line)
-            continue
-        key = stripped.partition("=")[0].strip()
-        if key in data and data[key] and "…" not in str(data[key]):
-            new_lines.append(f"{key}={data[key]}")
-            updated.add(key)
-        else:
-            new_lines.append(line)
-    for key, val in data.items():
-        if key not in updated and val and "…" not in str(val):
-            new_lines.append(f"{key}={val}")
-    env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-    return JSONResponse({"status": "saved", "updated": list(updated)})
+    channel_settings.save(data)
+    await _broadcast({"type": "settings_saved", "settings": channel_settings.load()})
+    return JSONResponse({"status": "saved"})
+
+
+@app.get("/api/auto-reply/stats")
+async def get_auto_reply_stats() -> JSONResponse:
+    stats: dict[str, int] = {}
+    if OUTPUT_DIR.exists():
+        for d in OUTPUT_DIR.iterdir():
+            if not d.is_dir():
+                continue
+            rf = d / "replied_comments.json"
+            if rf.exists():
+                try:
+                    replied = json.loads(rf.read_text(encoding="utf-8"))
+                    stats[d.name] = len(replied) if isinstance(replied, list) else 0
+                except Exception:
+                    stats[d.name] = 0
+    return JSONResponse({"stats": stats})
+
+
+@app.get("/api/analytics/per-video")
+async def get_per_video_analytics() -> JSONResponse:
+    """
+    Fetch view/like/comment counts for all uploaded videos using
+    YouTube Data API v3 (no Analytics API needed — just YOUTUBE_API_KEY).
+    """
+    vids = _scan_videos()
+    uploaded = [(v["slug"], v["video_id"]) for v in vids if v.get("video_id")]
+    if not uploaded:
+        return JSONResponse({"videos": []})
+
+    from config import YOUTUBE_API_KEY
+    if not YOUTUBE_API_KEY:
+        return JSONResponse({"videos": [], "error": "YOUTUBE_API_KEY not set"})
+
+    try:
+        from googleapiclient.discovery import build
+        yt = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+        id_to_slug = {vid_id: slug for slug, vid_id in uploaded}
+        all_video_ids = list(id_to_slug.keys())
+        result = []
+        for i in range(0, len(all_video_ids), 50):
+            batch = all_video_ids[i:i + 50]
+            resp  = yt.videos().list(
+                part="statistics,snippet,contentDetails", id=",".join(batch)
+            ).execute()
+            for item in resp.get("items", []):
+                vid_id = item["id"]
+                slug   = id_to_slug.get(vid_id, "")
+                s      = item.get("statistics", {})
+                dur    = item.get("contentDetails", {}).get("duration", "")
+                # Parse ISO 8601 duration to seconds
+                dur_s  = _parse_iso_duration(dur)
+                # Count replied comments
+                replies = 0
+                rf = OUTPUT_DIR / slug / "replied_comments.json"
+                if rf.exists():
+                    try:
+                        replies = len(json.loads(rf.read_text(encoding="utf-8")))
+                    except Exception:
+                        pass
+                result.append({
+                    "slug":          slug,
+                    "video_id":      vid_id,
+                    "title":         item["snippet"].get("title", ""),
+                    "published_at":  item["snippet"].get("publishedAt", ""),
+                    "thumbnail":     (item["snippet"].get("thumbnails", {})
+                                      .get("medium", {}).get("url")),
+                    "views":         int(s.get("viewCount", 0)),
+                    "likes":         int(s.get("likeCount", 0)),
+                    "comments":      int(s.get("commentCount", 0)),
+                    "duration_s":    dur_s,
+                    "has_short":     (OUTPUT_DIR / slug / "short" / "video.mp4").exists(),
+                    "short_id":      ((OUTPUT_DIR / slug / "short" / "uploaded.txt")
+                                       .read_text(encoding="utf-8").strip()
+                                       if (OUTPUT_DIR / slug / "short" / "uploaded.txt").exists()
+                                       else None),
+                    "drive_backed_up": (OUTPUT_DIR / slug / "drive_id.txt").exists(),
+                    "replies":       replies,
+                })
+        result.sort(key=lambda x: x.get("views", 0), reverse=True)
+        return JSONResponse({"videos": result})
+    except Exception as exc:
+        logger.warning(f"per-video analytics failed: {exc}")
+        return JSONResponse({"videos": [], "error": str(exc)})
+
+
+def _parse_iso_duration(dur: str) -> int:
+    """Convert ISO 8601 duration (PT4M13S) to total seconds."""
+    import re as _re
+    m = _re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", dur)
+    if not m:
+        return 0
+    h, mn, s = (int(x or 0) for x in m.groups())
+    return h * 3600 + mn * 60 + s
 
 
 @app.post("/api/drive-backup/{slug}")
@@ -529,6 +684,41 @@ def _blocking_auto_reply(video_id: str, video_dir: Path) -> int:
     return reply_to_comments(video_id, video_dir)
 
 
+@app.post("/api/upload-short/{slug}")
+async def upload_short_endpoint(slug: str) -> JSONResponse:
+    video_dir = OUTPUT_DIR / slug
+    short_path = video_dir / "short" / "video.mp4"
+    if not short_path.exists():
+        return JSONResponse({"error": "Short video not found — generate it first"}, status_code=404)
+    asyncio.create_task(_upload_short_task(slug, video_dir))
+    return JSONResponse({"status": "started"})
+
+
+async def _upload_short_task(slug: str, video_dir: Path) -> None:
+    try:
+        keyword = slug.replace("_", " ")
+        if (video_dir / "seo.json").exists():
+            import json as _json
+            keyword = _json.loads((video_dir / "seo.json").read_text("utf-8")).get("title", keyword)[:60]
+        short_path = video_dir / "short" / "video.mp4"
+        await _broadcast({"type": "log", "level": "INFO",
+                          "text": f"Uploading short for '{keyword[:50]}'…"})
+        from shorts import upload_short
+        video_id = await asyncio.to_thread(upload_short, short_path, keyword, video_dir)
+        await _broadcast({"type": "short_done", "slug": slug, "video_id": video_id,
+                          "url": f"https://youtube.com/shorts/{video_id}"})
+        await _broadcast({"type": "log", "level": "INFO",
+                          "text": f"Short uploaded → https://youtube.com/shorts/{video_id}"})
+        try:
+            from telegram_bot import notify_short_complete
+            await asyncio.to_thread(notify_short_complete, keyword, video_id)
+        except Exception:
+            pass
+    except Exception as exc:
+        await _broadcast({"type": "log", "level": "ERROR",
+                          "text": f"Short upload failed ({slug}): {exc}"})
+
+
 @app.post("/api/make-short/{slug}")
 async def make_short(slug: str) -> JSONResponse:
     video_dir = OUTPUT_DIR / slug
@@ -539,6 +729,7 @@ async def make_short(slug: str) -> JSONResponse:
 
 
 async def _short_task(slug: str, video_dir: Path) -> None:
+    await _task_start(f"short:{slug}", "short", slug, f"Generating Short: {slug.replace('_',' ')}")
     try:
         keyword = slug.replace("_", " ")
         if (video_dir / "seo.json").exists():
@@ -553,9 +744,17 @@ async def _short_task(slug: str, video_dir: Path) -> None:
                           "url": f"https://youtube.com/shorts/{video_id}"})
         await _broadcast({"type": "log", "level": "INFO",
                           "text": f"Short uploaded → https://youtube.com/shorts/{video_id}"})
+        # Telegram notification
+        try:
+            from telegram_bot import notify_short_complete
+            await asyncio.to_thread(notify_short_complete, keyword, video_id)
+        except Exception:
+            pass
     except Exception as exc:
         await _broadcast({"type": "log", "level": "ERROR",
                           "text": f"Short failed ({slug}): {exc}"})
+    finally:
+        await _task_end(f"short:{slug}")
 
 
 @app.get("/api/sheets/url")
@@ -621,6 +820,15 @@ async def telegram_test() -> JSONResponse:
         return JSONResponse({"ok": False, "error": str(exc)})
 
 
+@app.get("/api/optimizer/ranks/all")
+async def optimizer_ranks() -> JSONResponse:
+    try:
+        from channel_optimizer import get_all_ranks
+        return JSONResponse(get_all_ranks())
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 @app.get("/api/optimizer/{slug}")
 async def optimizer_audit(slug: str) -> JSONResponse:
     video_dir = OUTPUT_DIR / slug
@@ -637,13 +845,19 @@ async def optimizer_audit(slug: str) -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/api/optimizer/ranks/all")
-async def optimizer_ranks() -> JSONResponse:
-    try:
-        from channel_optimizer import get_all_ranks
-        return JSONResponse(get_all_ranks())
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
+_SCHEDULE_FILE = BASE / "schedule.json"
+
+@app.get("/api/schedule")
+async def get_schedule() -> JSONResponse:
+    if _SCHEDULE_FILE.exists():
+        return JSONResponse(json.loads(_SCHEDULE_FILE.read_text(encoding="utf-8")))
+    return JSONResponse({"time": "09:00", "count": 1, "enabled": False})
+
+@app.post("/api/schedule")
+async def save_schedule(request: Request) -> JSONResponse:
+    data = await request.json()
+    _SCHEDULE_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return JSONResponse({"status": "saved"})
 
 
 @app.post("/api/run")
@@ -697,7 +911,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
 # ── Pipeline subprocess ────────────────────────────────────────────────────────
 
 async def _pipeline_task(count: int, dry_run: bool) -> None:
-    global _running
+    global _running, _stop_requested, _current_keyword
+    _stop_requested = False
+    _current_keyword = ""
     try:
         cmd = [sys.executable, "-u", str(BASE / "master.py"), "--count", str(count)]
         if dry_run:
@@ -722,18 +938,550 @@ async def _pipeline_task(count: int, dry_run: bool) -> None:
                 "INFO"
             )
             await _broadcast({"type": "log", "level": level, "text": text})
+            # Track current keyword server-side for Telegram /status
+            kw_match = re.search(r"VIDEO \d+:\s+(.+)$", text)
+            if kw_match:
+                _current_keyword = kw_match.group(1).strip()
+            # Stop-requested: terminate subprocess after current video finishes
+            if _stop_requested and "Pipeline complete:" in text:
+                proc.terminate()
 
         await proc.wait()
+        _current_keyword = ""
+        vids = _scan_videos()
         await _broadcast({
             "type":      "pipeline_end",
             "exit_code": proc.returncode,
-            "videos":    _scan_videos(),
+            "videos":    vids,
         })
+        # Daily Telegram summary after any completed run
+        try:
+            from telegram_bot import notify_daily_summary
+            uploaded = sum(1 for v in vids if v.get("video_id"))
+            assembled = sum(1 for v in vids if v.get("stages", {}).get("assemble"))
+            ca = _cached_analytics.get("channel_analytics", {})
+            await asyncio.to_thread(notify_daily_summary, {
+                "assembled":   assembled,
+                "uploaded":    uploaded,
+                "views":       ca.get("views", 0),
+                "subs":        _cached_analytics.get("channel", {}).get("subscribers", 0),
+                "watch_hours": round(ca.get("estimatedMinutesWatched", 0) / 60, 1),
+                "ypp_pct":     min(100.0, round(ca.get("estimatedMinutesWatched", 0) / 60 / 4000 * 100, 1)),
+            })
+        except Exception:
+            pass
     except Exception as exc:
         await _broadcast({"type": "log", "level": "ERROR", "text": f"Dashboard error: {exc}"})
         await _broadcast({"type": "pipeline_end", "exit_code": -1, "videos": _scan_videos()})
     finally:
         _running = False
+        _current_keyword = ""
+
+
+# ── Pipeline stop ──────────────────────────────────────────────────────────────
+
+@app.get("/api/logs")
+async def get_logs() -> JSONResponse:
+    """Return the last 300 lines of log.txt."""
+    log_file = BASE / "log.txt"
+    if not log_file.exists():
+        return JSONResponse({"lines": []})
+    try:
+        lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+        return JSONResponse({"lines": lines[-300:]})
+    except Exception as exc:
+        return JSONResponse({"lines": [], "error": str(exc)})
+
+
+@app.get("/api/logs/download")
+async def download_logs():
+    """Download the full log.txt file."""
+    from fastapi.responses import FileResponse
+    log_file = BASE / "log.txt"
+    if not log_file.exists():
+        return JSONResponse({"error": "No log file"}, status_code=404)
+    return FileResponse(str(log_file), filename="ytauto.log", media_type="text/plain")
+
+
+@app.get("/api/system/info")
+async def system_info() -> JSONResponse:
+    """Return system health info."""
+    import platform
+    import shutil
+    disk = shutil.disk_usage(str(BASE))
+    videos = _scan_videos()
+    uploaded  = sum(1 for v in videos if v.get("video_id"))
+    has_short = sum(1 for v in videos if v.get("has_short"))
+    return JSONResponse({
+        "platform":       platform.system(),
+        "python_version": platform.python_version(),
+        "disk_free_gb":   round(disk.free / 1e9, 1),
+        "disk_used_gb":   round(disk.used / 1e9, 1),
+        "disk_total_gb":  round(disk.total / 1e9, 1),
+        "output_dir":     str(OUTPUT_DIR),
+        "videos_total":   len(videos),
+        "videos_uploaded": uploaded,
+        "shorts_total":   has_short,
+        "token_ok":       YOUTUBE_TOKEN_FILE.exists(),
+        "secrets_ok":     _secrets_type() == "installed",
+        "pipeline_running": _running,
+    })
+
+
+@app.post("/api/pipeline/stop")
+async def pipeline_stop() -> JSONResponse:
+    global _stop_requested
+    if not _running:
+        return JSONResponse({"status": "not_running"})
+    _stop_requested = True
+    await _broadcast({"type": "log", "level": "WARNING",
+                      "text": "⛔ Stop requested — will halt after current video."})
+    return JSONResponse({"status": "stop_requested"})
+
+
+# ── Built-in scheduler ────────────────────────────────────────────────────────
+
+async def _scheduler_loop() -> None:
+    """
+    Background loop: reads schedule.json every 60s and fires the pipeline
+    when the configured time matches and enabled=True.
+    """
+    global _running
+    import datetime as _dt
+    _last_fired: str = ""   # "YYYY-MM-DD HH:MM" of the last trigger
+
+    while True:
+        try:
+            await asyncio.sleep(60)
+            sf = BASE / "schedule.json"
+            if not sf.exists():
+                continue
+            try:
+                cfg = json.loads(sf.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+
+            if not cfg.get("enabled", False):
+                continue
+
+            sched_time = cfg.get("time", "09:00")  # "HH:MM"
+            now        = _dt.datetime.now().strftime("%H:%M")
+            today_key  = _dt.datetime.now().strftime("%Y-%m-%d ") + sched_time
+
+            if now == sched_time and today_key != _last_fired and not _running:
+                _last_fired = today_key
+                count = int(cfg.get("count", 1))
+                logger.info(f"Scheduler: firing pipeline count={count} at {sched_time}")
+                await _broadcast({"type": "log", "level": "INFO",
+                                  "text": f"⏰ Scheduler: auto-starting pipeline ({count} video(s))"})
+                _running = True
+                asyncio.create_task(_pipeline_task(count, False))
+
+                # Send Telegram notification
+                try:
+                    from telegram_bot import notify_pipeline_start
+                    await asyncio.to_thread(notify_pipeline_start, count)
+                except Exception:
+                    pass
+
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.debug(f"Scheduler loop error: {exc}")
+
+
+# ── Bulk operations ────────────────────────────────────────────────────────────
+
+@app.post("/api/bulk/upload-all")
+async def bulk_upload_all() -> JSONResponse:
+    """Queue upload for every assembled-but-not-uploaded video."""
+    pending = [v for v in _scan_videos()
+               if v.get("stages", {}).get("assemble") and not v.get("video_id") and not v.get("stages", {}).get("upload")]
+    if not pending:
+        return JSONResponse({"status": "nothing_to_upload", "count": 0})
+    for v in pending:
+        asyncio.create_task(_manual_upload_task(v["slug"], OUTPUT_DIR / v["slug"]))
+    return JSONResponse({"status": "started", "count": len(pending),
+                         "slugs": [v["slug"] for v in pending]})
+
+
+@app.post("/api/bulk/short-all")
+async def bulk_short_all() -> JSONResponse:
+    """Generate a Short for every video that doesn't have one yet."""
+    pending = [v for v in _scan_videos()
+               if v.get("stages", {}).get("assemble") and not v.get("has_short")]
+    if not pending:
+        return JSONResponse({"status": "nothing_to_do", "count": 0})
+    for v in pending:
+        asyncio.create_task(_short_task(v["slug"], OUTPUT_DIR / v["slug"]))
+    return JSONResponse({"status": "started", "count": len(pending),
+                         "slugs": [v["slug"] for v in pending]})
+
+
+@app.post("/api/bulk/reply-all")
+async def bulk_reply_all() -> JSONResponse:
+    """Auto-reply to comments on every uploaded video."""
+    uploaded = [v for v in _scan_videos() if v.get("video_id")]
+    if not uploaded:
+        return JSONResponse({"status": "nothing_to_do", "count": 0})
+    for v in uploaded:
+        asyncio.create_task(_auto_reply_task(v["slug"], v["video_id"], OUTPUT_DIR / v["slug"]))
+    return JSONResponse({"status": "started", "count": len(uploaded)})
+
+
+@app.get("/api/video/{slug}/detail")
+async def video_detail(slug: str) -> JSONResponse:
+    """Return full metadata for a single video: SEO, script preview, stats."""
+    video_dir = OUTPUT_DIR / slug
+    if not video_dir.exists():
+        return JSONResponse({"error": "not found"}, status_code=404)
+
+    detail: dict[str, Any] = {"slug": slug, "keyword": slug.replace("_", " ")}
+
+    # SEO
+    seo_path = video_dir / "seo.json"
+    if seo_path.exists():
+        try:
+            detail["seo"] = json.loads(seo_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    # Script preview (first 600 chars)
+    script_path = video_dir / "script.txt"
+    if script_path.exists():
+        try:
+            full = script_path.read_text(encoding="utf-8")
+            detail["script_preview"] = full[:800]
+            detail["script_words"]   = len(full.split())
+        except Exception:
+            pass
+
+    # Short script preview
+    short_script = video_dir / "short" / "script.txt"
+    if short_script.exists():
+        try:
+            detail["short_script_preview"] = short_script.read_text(encoding="utf-8")[:400]
+        except Exception:
+            pass
+
+    # File sizes
+    for fname, key in [("video.mp4", "video_mb"), ("voice.mp3", "voice_mb"),
+                        ("thumbnail.jpg", "thumbnail_kb")]:
+        p = video_dir / fname
+        if p.exists():
+            size = p.stat().st_size
+            detail[key] = round(size / (1024 * 1024 if fname.endswith(".mp4") else 1024), 1)
+
+    # Rank history
+    hist = video_dir / "rank_history.json"
+    if hist.exists():
+        try:
+            detail["rank_history"] = json.loads(hist.read_text(encoding="utf-8"))[-7:]
+        except Exception:
+            pass
+
+    # Upload info
+    if (video_dir / "uploaded.txt").exists():
+        detail["video_id"] = (video_dir / "uploaded.txt").read_text(encoding="utf-8").strip()
+    if (video_dir / "short" / "uploaded.txt").exists():
+        detail["short_video_id"] = (video_dir / "short" / "uploaded.txt").read_text(encoding="utf-8").strip()
+
+    return JSONResponse(detail)
+
+
+# ── Keyword queue ─────────────────────────────────────────────────────────────
+
+@app.get("/api/keywords/queue")
+async def get_keyword_queue() -> JSONResponse:
+    from keywords_queue import load_queue
+    return JSONResponse({"queue": load_queue()})
+
+
+@app.post("/api/keywords/queue")
+async def add_to_keyword_queue(req: Request) -> JSONResponse:
+    from keywords_queue import add_keywords, load_queue
+    body = await req.json()
+    keywords = body.get("keywords") or ([body["keyword"]] if body.get("keyword") else [])
+    keywords = [k.strip() for k in keywords if k.strip()]
+    if not keywords:
+        return JSONResponse({"error": "no keywords provided"}, status_code=400)
+    added = add_keywords(keywords, added_by="user")
+    q = load_queue()
+    await _broadcast({"type": "queue_update", "queue": q})
+    return JSONResponse({"added": added, "queue": q})
+
+
+@app.delete("/api/keywords/queue/{keyword}")
+async def remove_from_keyword_queue(keyword: str) -> JSONResponse:
+    from urllib.parse import unquote
+    from keywords_queue import remove_keyword, load_queue
+    removed = remove_keyword(unquote(keyword))
+    q = load_queue()
+    await _broadcast({"type": "queue_update", "queue": q})
+    return JSONResponse({"removed": removed, "queue": q})
+
+
+@app.post("/api/keywords/research")
+async def trigger_keyword_research() -> JSONResponse:
+    asyncio.create_task(_research_task())
+    return JSONResponse({"status": "started"})
+
+
+async def _research_task() -> None:
+    await _task_start("research", "research", "", "Running keyword research…")
+    await _broadcast({"type": "log", "level": "INFO",
+                      "text": "🔍 Keyword research starting — fetching trends…"})
+    try:
+        from research import get_trending_keywords
+        from keywords_queue import add_keywords, load_queue
+        keywords = await asyncio.to_thread(get_trending_keywords, 10)
+        added = add_keywords(keywords, added_by="research")
+        q = load_queue()
+        await _broadcast({"type": "queue_update", "queue": q})
+        await _broadcast({"type": "log", "level": "INFO",
+                          "text": f"🔍 Research done — {added} new keyword(s) added to queue"})
+    except Exception as exc:
+        await _broadcast({"type": "log", "level": "ERROR",
+                          "text": f"Keyword research failed: {exc}"})
+    finally:
+        await _task_end("research")
+
+
+@app.get("/api/tasks")
+async def get_active_tasks() -> JSONResponse:
+    return JSONResponse({"tasks": list(_active_tasks.values())})
+
+
+# ── Thumbnail regeneration ─────────────────────────────────────────────────────
+
+@app.post("/api/regen/thumbnail/{slug}")
+async def regen_thumbnail(slug: str) -> JSONResponse:
+    video_dir = OUTPUT_DIR / slug
+    if not video_dir.exists():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    if not (video_dir / "seo.json").exists():
+        return JSONResponse({"error": "no seo.json — run pipeline first"}, status_code=400)
+    asyncio.create_task(_regen_thumbnail_task(slug, video_dir))
+    return JSONResponse({"status": "started"})
+
+
+async def _regen_thumbnail_task(slug: str, video_dir: Path) -> None:
+    await _task_start(f"thumb:{slug}", "thumbnail", slug, f"Regenerating thumbnail: {slug.replace('_', ' ')}")
+    await _broadcast({"type": "log", "level": "INFO",
+                      "text": f"Thumbnail regen: starting for {slug}…"})
+    try:
+        # Remove existing thumbnail so the generator runs fresh
+        old_thumb = video_dir / "thumbnail.jpg"
+        if old_thumb.exists():
+            old_thumb.unlink()
+
+        seo_data = json.loads((video_dir / "seo.json").read_text(encoding="utf-8"))
+        keyword  = seo_data.get("title", slug.replace("_", " "))
+
+        from thumbnail import create_thumbnail
+        await asyncio.to_thread(create_thumbnail, keyword, video_dir)
+
+        await _broadcast({"type": "thumbnail_done", "slug": slug})
+        await _broadcast({"type": "log", "level": "INFO",
+                          "text": f"Thumbnail regenerated for {slug}"})
+    except Exception as exc:
+        await _broadcast({"type": "log", "level": "ERROR",
+                          "text": f"Thumbnail regen failed ({slug}): {exc}"})
+    finally:
+        await _task_end(f"thumb:{slug}")
+
+
+# ── View-milestone tracker ────────────────────────────────────────────────────
+
+_MILESTONES   = [100, 500, 1000, 5000, 10000, 50000, 100_000]
+_MILESTONE_FILE = BASE / "milestones.json"
+
+
+async def _milestone_checker_loop() -> None:
+    """Check every 4 hours whether any video has crossed a new view milestone."""
+    while True:
+        try:
+            await asyncio.sleep(4 * 3600)
+            await asyncio.to_thread(_check_milestones_sync)
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.debug(f"Milestone checker error: {exc}")
+
+
+def _check_milestones_sync() -> None:
+    from config import YOUTUBE_API_KEY
+    if not YOUTUBE_API_KEY:
+        return
+
+    history: dict[str, list[int]] = {}
+    if _MILESTONE_FILE.exists():
+        try:
+            history = json.loads(_MILESTONE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    vids = _scan_videos()
+    uploaded = [(v["slug"], v["video_id"]) for v in vids if v.get("video_id")]
+    if not uploaded:
+        return
+
+    try:
+        from googleapiclient.discovery import build
+        yt      = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+        id_map  = {vid_id: slug for slug, vid_id in uploaded}
+        vid_ids = list(id_map.keys())
+
+        for i in range(0, len(vid_ids), 50):
+            batch = vid_ids[i:i + 50]
+            resp  = yt.videos().list(part="statistics,snippet", id=",".join(batch)).execute()
+            for item in resp.get("items", []):
+                vid_id = item["id"]
+                views  = int(item["statistics"].get("viewCount", 0))
+                title  = item["snippet"].get("title", vid_id)[:60]
+                reached = history.setdefault(vid_id, [])
+                for m in _MILESTONES:
+                    if views >= m and m not in reached:
+                        reached.append(m)
+                        try:
+                            from telegram_bot import notify_milestone
+                            notify_milestone(title, views, m, vid_id)
+                            logger.info(f"Milestone: '{title}' hit {m:,} views")
+                        except Exception:
+                            pass
+
+        _MILESTONE_FILE.write_text(json.dumps(history, indent=2), encoding="utf-8")
+    except Exception as exc:
+        logger.debug(f"Milestone check failed: {exc}")
+
+
+@app.post("/api/milestones/check")
+async def trigger_milestone_check() -> JSONResponse:
+    """Manually trigger a milestone check."""
+    asyncio.create_task(asyncio.to_thread(_check_milestones_sync))
+    return JSONResponse({"status": "started"})
+
+
+@app.get("/api/milestones")
+async def get_milestones() -> JSONResponse:
+    history: dict = {}
+    if _MILESTONE_FILE.exists():
+        try:
+            history = json.loads(_MILESTONE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return JSONResponse({"milestones": history})
+
+
+# ── CSV export ────────────────────────────────────────────────────────────────
+
+@app.get("/api/analytics/export.csv")
+async def export_analytics_csv():
+    from fastapi.responses import StreamingResponse
+    import io, csv as _csv
+    vids = _scan_videos()
+    out  = io.StringIO()
+    w    = _csv.writer(out)
+    w.writerow(["Slug", "Keyword", "Upload Date", "Video ID", "YT Link",
+                "Has Short", "Short ID", "Short Link", "Drive Backed Up",
+                "Stages Done"])
+    for v in vids:
+        stages_done = sum(1 for s in (v.get("stages") or {}).values() if s)
+        vid_id  = v.get("video_id") or ""
+        short_id = v.get("short_video_id") or ""
+        w.writerow([
+            v.get("slug", ""),
+            v.get("keyword", ""),
+            v.get("upload_date") or "",
+            vid_id,
+            f"https://youtube.com/watch?v={vid_id}" if vid_id else "",
+            "Yes" if v.get("has_short") else "No",
+            short_id,
+            f"https://youtube.com/shorts/{short_id}" if short_id else "",
+            "Yes" if v.get("drive_backed_up") else "No",
+            stages_done,
+        ])
+    out.seek(0)
+    return StreamingResponse(
+        iter([out.read()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=ytauto_videos.csv"},
+    )
+
+
+# ── Telegram command listener ──────────────────────────────────────────────────
+
+async def _start_telegram_listener() -> None:
+    """Background task: start Telegram command listener with dashboard callbacks."""
+    from config import TELEGRAM_BOT_TOKEN as _token
+    if not _token:
+        return
+
+    try:
+        from telegram_commands import start_listener
+        from pathlib import Path as _Path
+
+        def _get_status() -> dict:
+            return {
+                "running":         _running,
+                "current_keyword": _current_keyword,
+                "videos":          _scan_videos(),
+            }
+
+        async def _trigger_run(count: int, dry_run: bool) -> None:
+            global _running
+            if _running:
+                return
+            _running = True
+            asyncio.create_task(_pipeline_task(count, dry_run))
+
+        async def _trigger_short(keyword_or_slug: str) -> None:
+            # Find matching output dir: try exact slug first, then fuzzy
+            slug = re.sub(r"[^\w\s-]", "", keyword_or_slug.lower())
+            slug = re.sub(r"\s+", "_", slug.strip())[:60]
+            video_dir = OUTPUT_DIR / slug
+            if not video_dir.exists():
+                # Fuzzy: find first folder whose name contains all words
+                words = slug.split("_")[:3]
+                for d in sorted(OUTPUT_DIR.iterdir()):
+                    if d.is_dir() and all(w in d.name for w in words):
+                        video_dir = d
+                        slug = d.name
+                        break
+            if not video_dir.exists():
+                from telegram_bot import send
+                await asyncio.to_thread(
+                    send, f"❌ No video found for: <i>{keyword_or_slug[:60]}</i>\n"
+                          "Use /videos to see available keywords.")
+                return
+            asyncio.create_task(_short_task(slug, video_dir))
+
+        def _trigger_stop() -> None:
+            global _stop_requested
+            _stop_requested = True
+
+        def _get_analytics() -> dict:
+            return _cached_analytics
+
+        def _get_schedule() -> dict:
+            _sf = BASE / "schedule.json"
+            if _sf.exists():
+                try:
+                    return json.loads(_sf.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            return {"time": "09:00", "count": 1, "enabled": False}
+
+        await start_listener(
+            get_status=_get_status,
+            trigger_run=_trigger_run,
+            trigger_short=_trigger_short,
+            get_analytics=_get_analytics,
+            trigger_stop=_trigger_stop,
+            get_schedule=_get_schedule,
+        )
+    except Exception as exc:
+        logger.warning(f"Telegram listener failed to start: {exc}")
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────

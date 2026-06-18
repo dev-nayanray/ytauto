@@ -184,13 +184,28 @@ def main() -> None:
 
     logger.info(f"Master pipeline starting  count={count}  dry_run={dry_run}")
 
-    # ── Keyword research ───────────────────────────────────────────────────────
+    # ── Keyword selection: queue first, then research ─────────────────────────
     try:
-        from research import get_trending_keywords
+        from keywords_queue import load_queue, pop_keywords
 
-        keywords = get_trending_keywords(count=5)  # always research 5, pick top N
+        queued = load_queue()
+        if len(queued) >= count:
+            # Enough queued keywords — no research needed this run
+            keywords = pop_keywords(count)
+            logger.info(f"Using {count} keyword(s) from queue: {keywords}")
+        else:
+            # Pop whatever's in the queue, fill rest with research
+            from_queue = pop_keywords(len(queued))
+            needed     = count - len(from_queue)
+            from research import get_trending_keywords
+            researched = get_trending_keywords(count=max(5, needed * 2))
+            keywords   = from_queue + researched[:needed]
+            if from_queue:
+                logger.info(f"Queue supplied: {from_queue}; research supplied: {researched[:needed]}")
+            else:
+                logger.info(f"Queue empty — using research: {keywords}")
     except Exception as exc:
-        logger.critical(f"Keyword research failed — cannot continue: {exc}", exc_info=True)
+        logger.critical(f"Keyword selection failed — cannot continue: {exc}", exc_info=True)
         sys.exit(1)
 
     # ── Publish schedule ───────────────────────────────────────────────────────
