@@ -1,0 +1,1732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ytauto — Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            surface: { 950:'#020207', 900:'#07071a', 800:'#0d0d22', 700:'#131330' },
+            brand:   { 300:'#c4b5fd', 400:'#a78bfa', 500:'#7c3aed', 600:'#6d28d9' },
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --bg:          #020207;
+      --bg-card:     rgba(255,255,255,0.035);
+      --border:      rgba(255,255,255,0.07);
+      --brand:       #7c3aed;
+      --brand-lt:    #a78bfa;
+      --brand-glow:  rgba(124,58,237,0.35);
+      --green:       #10b981;
+      --amber:       #f59e0b;
+      --red:         #ef4444;
+      --text-1:      #f1f5f9;
+      --text-2:      #94a3b8;
+      --text-3:      #475569;
+    }
+
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text-1); }
+    .mono { font-family: 'JetBrains Mono', 'Consolas', monospace; }
+
+    /* Glass card */
+    .glass {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+    }
+
+    /* Gradient text */
+    .grad-text {
+      background: linear-gradient(135deg, var(--brand-lt), #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* Glow helpers */
+    .brand-glow    { box-shadow: 0 0 24px var(--brand-glow); }
+    .brand-glow-sm { box-shadow: 0 0 12px rgba(124,58,237,0.2); }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.25); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,0.45); }
+
+    /* ── PIPELINE STAGE NODES ── */
+    .stage-node {
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 6px;
+      text-align: center;
+      transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+      min-width: 82px;
+      flex-shrink: 0;
+      cursor: default;
+      user-select: none;
+    }
+    .stage-node.done {
+      border-color: rgba(16,185,129,0.5);
+      background: rgba(16,185,129,0.06);
+    }
+    .stage-node.running {
+      border-color: rgba(124,58,237,0.7);
+      background: rgba(124,58,237,0.1);
+      box-shadow: 0 0 20px rgba(124,58,237,0.3);
+      animation: pulse-glow 1.8s ease-out infinite;
+    }
+    .stage-node.error {
+      border-color: rgba(239,68,68,0.5);
+      background: rgba(239,68,68,0.06);
+    }
+
+    /* ── PIPELINE CONNECTOR ARROWS ── */
+    .stage-connector {
+      flex: 1;
+      height: 2px;
+      background: var(--border);
+      position: relative;
+      min-width: 12px;
+      align-self: center;
+      margin-top: -18px;
+    }
+    .stage-connector.done {
+      background: var(--green);
+    }
+    .stage-connector.running {
+      background: linear-gradient(90deg, var(--green) 0%, var(--brand-lt) 100%);
+      background-size: 200% 100%;
+      animation: flow 1.5s linear infinite;
+    }
+    .stage-connector::after {
+      content: '▶';
+      position: absolute;
+      right: -7px;
+      top: -7px;
+      font-size: 9px;
+      color: var(--text-3);
+      line-height: 1;
+    }
+    .stage-connector.done::after    { color: var(--green); }
+    .stage-connector.running::after { color: var(--brand-lt); }
+
+    @keyframes flow {
+      0%   { background-position: 0% 0%; }
+      100% { background-position: 200% 0%; }
+    }
+
+    @keyframes pulse-glow {
+      0%   { box-shadow: 0 0 0 0 rgba(124,58,237,0.5); }
+      70%  { box-shadow: 0 0 0 10px rgba(124,58,237,0); }
+      100% { box-shadow: 0 0 0 0 rgba(124,58,237,0); }
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; display: inline-block; }
+
+    @keyframes spin-slow { to { transform: rotate(360deg); } }
+    .spin-slow { animation: spin-slow 1.2s linear infinite; display: inline-block; }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+    .pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+
+    /* Running pipeline badge */
+    @keyframes pulse-ring {
+      0%   { box-shadow: 0 0 0 0   rgba(124,58,237,0.5); }
+      70%  { box-shadow: 0 0 0 6px rgba(124,58,237,0); }
+      100% { box-shadow: 0 0 0 0   rgba(124,58,237,0); }
+    }
+    .pulse-ring { animation: pulse-ring 1.5s ease-out infinite; }
+
+    /* ── STAT CARDS accent lines ── */
+    .stat-accent { position: relative; overflow: hidden; }
+    .stat-accent::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      border-radius: 9999px 9999px 0 0;
+    }
+    .stat-accent-indigo::before  { background: linear-gradient(90deg, #818cf8, #c084fc); }
+    .stat-accent-emerald::before { background: linear-gradient(90deg, #10b981, #34d399); }
+    .stat-accent-amber::before   { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .stat-accent-sky::before     { background: linear-gradient(90deg, #38bdf8, #7dd3fc); }
+    .stat-accent-rose::before    { background: linear-gradient(90deg, #f43f5e, #fb7185); }
+    .stat-accent-green::before   { background: linear-gradient(90deg, #22c55e, #4ade80); }
+
+    /* ── LOG ENTRIES ── */
+    .log-INFO    { border-left: 2px solid rgba(124,58,237,0.25); }
+    .log-WARNING { border-left: 2px solid #f59e0b; }
+    .log-ERROR   { border-left: 2px solid #ef4444; }
+
+    /* ── CARD HOVER ── */
+    .card-hover {
+      transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+    }
+    .card-hover:hover {
+      transform: translateY(-3px);
+      border-color: rgba(124,58,237,0.25) !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.45), 0 0 24px rgba(124,58,237,0.1);
+    }
+
+    /* ── MODAL BACKDROP ── */
+    .modal-backdrop {
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    /* ── YPP PROGRESS BARS ── */
+    @keyframes shimmer {
+      0%   { background-position: -200% 0; }
+      100% { background-position:  200% 0; }
+    }
+    .progress-bar-animated {
+      background-size: 200% 100%;
+      animation: shimmer 2.5s linear infinite;
+    }
+
+    /* ── THUMBNAIL HOVER ── */
+    .thumb-hover img {
+      transition: transform .45s ease, filter .45s ease;
+    }
+    .thumb-hover:hover img {
+      transform: scale(1.06);
+      filter: brightness(1.1);
+    }
+
+    /* Smooth transitions global */
+    * { transition-timing-function: cubic-bezier(0.4,0,0.2,1); }
+  </style>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
+</head>
+
+<body class="dark text-gray-100 min-h-screen" x-data="dash()" x-init="init()">
+
+<!-- ════════════════════════════════════════════════ SETTINGS MODAL -->
+<div x-show="showSettings"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-150"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     class="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop"
+     @click.self="showSettings = false">
+  <div class="glass rounded-2xl p-8 w-full max-w-lg mx-4 shadow-2xl border border-white/10"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0 scale-95"
+       x-transition:enter-end="opacity-100 scale-100">
+    <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center gap-3">
+        <div class="w-7 h-7 rounded-lg flex items-center justify-center text-white text-sm"
+             style="background: var(--brand);">⚙</div>
+        <h2 class="text-base font-semibold grad-text">Settings</h2>
+      </div>
+      <button @click="showSettings = false"
+              class="w-7 h-7 rounded-lg flex items-center justify-center text-gray-500 hover:text-gray-200 hover:bg-white/5 transition text-lg leading-none">&times;</button>
+    </div>
+
+    <div class="space-y-4">
+      <template x-for="key in ['ANTHROPIC_API_KEY','PEXELS_API_KEY','YOUTUBE_API_KEY','TTS_VOICE']" :key="key">
+        <div>
+          <label class="block text-xs mb-1.5 font-medium" style="color: var(--text-2);" x-text="key"></label>
+          <input type="text"
+                 :value="settingsData[key] || ''"
+                 @input="settingsData[key] = $event.target.value"
+                 :placeholder="key === 'TTS_VOICE' ? 'e.g. en-US-GuyNeural' : 'Enter value…'"
+                 class="w-full rounded-xl px-4 py-2.5 text-sm placeholder-gray-600 focus:outline-none transition mono"
+                 style="background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: var(--text-1);">
+        </div>
+      </template>
+    </div>
+
+    <div class="flex gap-3 mt-6 pt-6" style="border-top: 1px solid var(--border);">
+      <button @click="saveSettings()"
+              class="flex-1 py-2.5 rounded-xl text-white font-semibold text-sm transition brand-glow-sm active:scale-95"
+              style="background: var(--brand);">
+        Save Settings
+      </button>
+      <button @click="showSettings = false"
+              class="px-5 py-2.5 rounded-xl text-sm transition"
+              style="border: 1px solid var(--border); color: var(--text-2);">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════ STICKY HEADER -->
+<header class="sticky top-0 z-50 border-b" style="background: rgba(2,2,7,0.92); border-color: var(--border); backdrop-filter: blur(16px);">
+  <div class="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between gap-4">
+
+    <!-- Left: logo + channel -->
+    <div class="flex items-center gap-3 min-w-0">
+      <!-- Logo mark -->
+      <div class="w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs text-white flex-shrink-0 brand-glow select-none"
+           style="background: linear-gradient(135deg, var(--brand), #9333ea);">◈</div>
+      <span class="font-bold text-sm tracking-tight grad-text">ytauto</span>
+      <span class="text-sm" style="color: var(--text-3);">/</span>
+
+      <!-- Channel info (when connected) -->
+      <template x-if="channel">
+        <div class="flex items-center gap-2 min-w-0">
+          <div class="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 border" style="border-color: var(--border);">
+            <template x-if="channel.thumbnail">
+              <img :src="channel.thumbnail" class="w-full h-full object-cover" alt="">
+            </template>
+            <template x-if="!channel.thumbnail">
+              <div class="w-full h-full flex items-center justify-center text-xs" style="background: var(--bg-card);">C</div>
+            </template>
+          </div>
+          <span class="text-xs font-medium truncate max-w-[120px]" style="color: var(--text-2);" x-text="channel.title"></span>
+          <template x-if="analytics && analytics.channel && !analytics.channel.hidden_subs">
+            <span class="text-xs px-2 py-0.5 rounded-full mono flex-shrink-0"
+                  style="background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2);"
+                  x-text="Number(analytics.channel.subscribers).toLocaleString() + ' subs'"></span>
+          </template>
+        </div>
+      </template>
+      <template x-if="!channel">
+        <span class="text-xs" style="color: var(--text-3);">dashboard</span>
+      </template>
+    </div>
+
+    <!-- Right: status controls -->
+    <div class="flex items-center gap-2 flex-shrink-0">
+      <!-- WS status -->
+      <div class="flex items-center gap-1.5 text-xs" :class="wsConnected ? 'text-emerald-400' : 'text-red-400'">
+        <div class="w-1.5 h-1.5 rounded-full flex-shrink-0" :class="wsConnected ? 'bg-emerald-400' : 'bg-red-400'"></div>
+        <span class="hidden sm:inline" x-text="wsConnected ? 'Live' : 'Reconnecting…'"></span>
+      </div>
+
+      <!-- Pipeline running badge -->
+      <div class="flex items-center gap-1.5 text-xs"
+           :class="running ? 'text-violet-400' : 'text-gray-600'">
+        <div class="w-1.5 h-1.5 rounded-full transition-all duration-300"
+             :class="running ? 'bg-violet-400 pulse-ring' : 'bg-gray-700'"></div>
+        <span class="hidden sm:inline" x-text="running ? 'Running' : 'Idle'"></span>
+      </div>
+
+      <!-- Refresh analytics -->
+      <button @click="fetchAnalytics()"
+              :disabled="analyticsLoading"
+              class="hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition"
+              style="border: 1px solid var(--border); color: var(--text-2);"
+              :class="analyticsLoading ? 'opacity-50 cursor-wait' : 'hover:border-violet-500/30'">
+        <span x-show="analyticsLoading" class="spin-slow">&#8635;</span>
+        <span>&#8635; Refresh</span>
+      </button>
+
+      <!-- Settings button -->
+      <button @click="openSettings()"
+              class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition"
+              style="border: 1px solid var(--border); color: var(--text-2);">
+        ⚙ Settings
+      </button>
+    </div>
+  </div>
+</header>
+
+
+<main class="max-w-7xl mx-auto px-6 py-8 space-y-8">
+
+<!-- ════════════════════════════════════════════════ PIPELINE WORKFLOW -->
+<div class="glass rounded-2xl p-6 space-y-5">
+
+  <!-- Header row -->
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div class="flex items-center gap-3">
+      <h2 class="text-sm font-semibold" style="color: var(--text-2);">Pipeline</h2>
+      <template x-if="running && currentKeyword">
+        <span class="flex items-center gap-1.5 text-xs px-3 py-1 rounded-full font-medium"
+              style="background: rgba(124,58,237,0.15); border: 1px solid rgba(124,58,237,0.3); color: var(--brand-lt);">
+          <span class="w-1.5 h-1.5 rounded-full bg-violet-400 pulse-dot"></span>
+          <span x-text="currentKeyword"></span>
+        </span>
+      </template>
+      <template x-if="!running && currentKeyword">
+        <span class="text-xs px-3 py-1 rounded-full"
+              style="background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: var(--text-3);"
+              x-text="currentKeyword"></span>
+      </template>
+    </div>
+    <div class="flex items-center gap-4">
+      <span class="text-xs mono" style="color: var(--text-3);"
+            x-text="`${completedStages}/8 stages`"></span>
+      <div class="w-32 h-1.5 rounded-full overflow-hidden" style="background: rgba(255,255,255,0.06);">
+        <div class="h-full rounded-full transition-all duration-700"
+             style="background: linear-gradient(90deg, var(--brand), #9333ea);"
+             :style="`width: ${stageProgress}%`"></div>
+      </div>
+      <span class="text-xs mono" style="color: var(--text-2);" x-text="`${stageProgress}%`"></span>
+    </div>
+  </div>
+
+  <!-- Stage nodes + connectors -->
+  <div class="overflow-x-auto pb-1">
+    <div class="flex items-start gap-0 min-w-[740px]">
+
+      <!-- Research -->
+      <div class="stage-node" :class="stages.research">
+        <div class="text-xl mb-1.5">🔍</div>
+        <div class="text-xs font-medium mb-1.5"
+             :class="{
+               'text-gray-500': stages.research === 'pending',
+               'text-violet-400': stages.research === 'running',
+               'text-emerald-400': stages.research === 'done',
+               'text-red-400': stages.research === 'error',
+             }">Research</div>
+        <div class="text-xs"
+             :class="{
+               'text-gray-600': stages.research === 'pending',
+               'text-violet-400': stages.research === 'running',
+               'text-emerald-400': stages.research === 'done',
+               'text-red-400': stages.research === 'error',
+             }">
+          <span x-show="stages.research === 'pending'">○</span>
+          <span x-show="stages.research === 'running'" class="spin">↻</span>
+          <span x-show="stages.research === 'done'">✓</span>
+          <span x-show="stages.research === 'error'">✗</span>
+        </div>
+      </div>
+
+      <div class="stage-connector" :class="{ done: stages.research === 'done', running: stages.research === 'running' }"></div>
+
+      <!-- Script -->
+      <div class="stage-node" :class="stages.script">
+        <div class="text-xl mb-1.5">📝</div>
+        <div class="text-xs font-medium mb-1.5"
+             :class="{
+               'text-gray-500': stages.script === 'pending',
+               'text-violet-400': stages.script === 'running',
+               'text-emerald-400': stages.script === 'done',
+               'text-red-400': stages.script === 'error',
+             }">Script</div>
+        <div class="text-xs"
+             :class="{
+               'text-gray-600': stages.script === 'pending',
+               'text-violet-400': stages.script === 'running',
+               'text-emerald-400': stages.script === 'done',
+               'text-red-400': stages.script === 'error',
+             }">
+          <span x-show="stages.script === 'pending'">○</span>
+          <span x-show="stages.script === 'running'" class="spin">↻</span>
+          <span x-show="stages.script === 'done'">✓</span>
+          <span x-show="stages.script === 'error'">✗</span>
+        </div>
+      </div>
+
+      <div class="stage-connector" :class="{ done: stages.script === 'done', running: stages.script === 'running' }"></div>
+
+      <!-- Voice -->
+      <div class="stage-node" :class="stages.voice">
+        <div class="text-xl mb-1.5">🎙</div>
+        <div class="text-xs font-medium mb-1.5"
+             :class="{
+               'text-gray-500': stages.voice === 'pending',
+               'text-violet-400': stages.voice === 'running',
+               'text-emerald-400': stages.voice === 'done',
+               'text-red-400': stages.voice === 'error',
+             }">Voice</div>
+        <div class="text-xs"
+             :class="{
+               'text-gray-600': stages.voice === 'pending',
+               'text-violet-400': stages.voice === 'running',
+               'text-emerald-400': stages.voice === 'done',
+               'text-red-400': stages.voice === 'error',
+             }">
+          <span x-show="stages.voice === 'pending'">○</span>
+          <span x-show="stages.voice === 'running'" class="spin">↻</span>
+          <span x-show="stages.voice === 'done'">✓</span>
+          <span x-show="stages.voice === 'error'">✗</span>
+        </div>
+      </div>
+
+      <div class="stage-connector" :class="{ done: stages.voice === 'done', running: stages.voice === 'running' }"></div>
+
+      <!-- Visuals -->
+      <div class="stage-node" :class="stages.visuals">
+        <div class="text-xl mb-1.5">🎬</div>
+        <div class="text-xs font-medium mb-1.5"
+             :class="{
+               'text-gray-500': stages.visuals === 'pending',
+               'text-violet-400': stages.visuals === 'running',
+               'text-emerald-400': stages.visuals === 'done',
+               'text-red-400': stages.visuals === 'error',
+             }">Visuals</div>
+        <div class="text-xs"
+             :class="{
+               'text-gray-600': stages.visuals === 'pending',
+               'text-violet-400': stages.visuals === 'running',
+               'text-emerald-400': stages.visuals === 'done',
+               'text-red-400': stages.visuals === 'error',
+             }">
+          <span x-show="stages.visuals === 'pending'">○</span>
+          <span x-show="stages.visuals === 'running'" class="spin">↻</span>
+          <span x-show="stages.visuals === 'done'">✓</span>
+          <span x-show="stages.visuals === 'error'">✗</span>
+        </div>
+      </div>
+
+      <div class="stage-connector" :class="{ done: stages.visuals === 'done', running: stages.visuals === 'running' }"></div>
+
+      <!-- Assemble -->
+      <div class="stage-node" :class="stages.assemble">
+        <div class="text-xl mb-1.5">⚡</div>
+        <div class="text-xs font-medium mb-1.5"
+             :class="{
+               'text-gray-500': stages.assemble === 'pending',
+               'text-violet-400': stages.assemble === 'running',
+               'text-emerald-400': stages.assemble === 'done',
+               'text-red-400': stages.assemble === 'error',
+             }">Assemble</div>
+        <div class="text-xs"
+             :class="{
+               'text-gray-600': stages.assemble === 'pending',
+               'text-violet-400': stages.assemble === 'running',
+               'text-emerald-400': stages.assemble === 'done',
+               'text-red-400': stages.assemble === 'error',
+             }">
+          <span x-show="stages.assemble === 'pending'">○</span>
+          <span x-show="stages.assemble === 'running'" class="spin">↻</span>
+          <span x-show="stages.assemble === 'done'">✓</span>
+          <span x-show="stages.assemble === 'error'">✗</span>
+        </div>
+      </div>
+
+      <div class="stage-connector" :class="{ done: stages.assemble === 'done', running: stages.assemble === 'running' }"></div>
+
+      <!-- SEO -->
+      <div class="stage-node" :class="stages.seo">
+        <div class="text-xl mb-1.5">📊</div>
+        <div class="text-xs font-medium mb-1.5"
+             :class="{
+               'text-gray-500': stages.seo === 'pending',
+               'text-violet-400': stages.seo === 'running',
+               'text-emerald-400': stages.seo === 'done',
+               'text-red-400': stages.seo === 'error',
+             }">SEO</div>
+        <div class="text-xs"
+             :class="{
+               'text-gray-600': stages.seo === 'pending',
+               'text-violet-400': stages.seo === 'running',
+               'text-emerald-400': stages.seo === 'done',
+               'text-red-400': stages.seo === 'error',
+             }">
+          <span x-show="stages.seo === 'pending'">○</span>
+          <span x-show="stages.seo === 'running'" class="spin">↻</span>
+          <span x-show="stages.seo === 'done'">✓</span>
+          <span x-show="stages.seo === 'error'">✗</span>
+        </div>
+      </div>
+
+      <div class="stage-connector" :class="{ done: stages.seo === 'done', running: stages.seo === 'running' }"></div>
+
+      <!-- Thumbnail -->
+      <div class="stage-node" :class="stages.thumbnail">
+        <div class="text-xl mb-1.5">🖼</div>
+        <div class="text-xs font-medium mb-1.5"
+             :class="{
+               'text-gray-500': stages.thumbnail === 'pending',
+               'text-violet-400': stages.thumbnail === 'running',
+               'text-emerald-400': stages.thumbnail === 'done',
+               'text-red-400': stages.thumbnail === 'error',
+             }">Thumb</div>
+        <div class="text-xs"
+             :class="{
+               'text-gray-600': stages.thumbnail === 'pending',
+               'text-violet-400': stages.thumbnail === 'running',
+               'text-emerald-400': stages.thumbnail === 'done',
+               'text-red-400': stages.thumbnail === 'error',
+             }">
+          <span x-show="stages.thumbnail === 'pending'">○</span>
+          <span x-show="stages.thumbnail === 'running'" class="spin">↻</span>
+          <span x-show="stages.thumbnail === 'done'">✓</span>
+          <span x-show="stages.thumbnail === 'error'">✗</span>
+        </div>
+      </div>
+
+      <div class="stage-connector" :class="{ done: stages.thumbnail === 'done', running: stages.thumbnail === 'running' }"></div>
+
+      <!-- Upload -->
+      <div class="stage-node" :class="stages.upload">
+        <div class="text-xl mb-1.5">🚀</div>
+        <div class="text-xs font-medium mb-1.5"
+             :class="{
+               'text-gray-500': stages.upload === 'pending',
+               'text-violet-400': stages.upload === 'running',
+               'text-emerald-400': stages.upload === 'done',
+               'text-red-400': stages.upload === 'error',
+             }">Upload</div>
+        <div class="text-xs"
+             :class="{
+               'text-gray-600': stages.upload === 'pending',
+               'text-violet-400': stages.upload === 'running',
+               'text-emerald-400': stages.upload === 'done',
+               'text-red-400': stages.upload === 'error',
+             }">
+          <span x-show="stages.upload === 'pending'">○</span>
+          <span x-show="stages.upload === 'running'" class="spin">↻</span>
+          <span x-show="stages.upload === 'done'">✓</span>
+          <span x-show="stages.upload === 'error'">✗</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Pipeline controls row -->
+  <div class="flex flex-wrap items-center gap-3 pt-4" style="border-top: 1px solid var(--border);">
+
+    <!-- Count stepper -->
+    <div class="flex items-center gap-1.5 rounded-xl px-1 py-1" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border);">
+      <button @click="count = Math.max(1, count - 1)"
+              class="w-7 h-7 rounded-lg flex items-center justify-center text-sm transition hover:bg-white/10"
+              style="color: var(--text-2);">−</button>
+      <span class="w-7 text-center text-sm font-semibold mono" style="color: var(--text-1);" x-text="count"></span>
+      <button @click="count = Math.min(10, count + 1)"
+              class="w-7 h-7 rounded-lg flex items-center justify-center text-sm transition hover:bg-white/10"
+              style="color: var(--text-2);">+</button>
+    </div>
+    <span class="text-xs" style="color: var(--text-3);">videos</span>
+
+    <!-- Dry run toggle -->
+    <div class="flex items-center gap-2">
+      <button @click="dryRun = !dryRun"
+              class="w-9 h-5 rounded-full transition-colors duration-200 relative focus:outline-none"
+              :style="dryRun ? 'background: var(--brand);' : 'background: #374151;'">
+        <span class="w-3.5 h-3.5 bg-white rounded-full absolute top-0.5 transition-all duration-200 shadow-sm"
+              :class="dryRun ? 'left-[18px]' : 'left-0.5'"></span>
+      </button>
+      <span class="text-xs" style="color: var(--text-2);">Dry run</span>
+    </div>
+
+    <!-- Spacer -->
+    <div class="flex-1"></div>
+
+    <!-- Quick-count buttons -->
+    <button @click="count = 3; startPipeline()"
+            :disabled="running"
+            class="text-xs px-3 py-2 rounded-xl transition font-medium"
+            style="border: 1px solid var(--border); color: var(--text-2);"
+            :class="running ? 'opacity-40 cursor-not-allowed' : 'hover:border-violet-500/30'">
+      ▶ Run 3
+    </button>
+    <button @click="count = 5; startPipeline()"
+            :disabled="running"
+            class="text-xs px-3 py-2 rounded-xl transition font-medium"
+            style="border: 1px solid var(--border); color: var(--text-2);"
+            :class="running ? 'opacity-40 cursor-not-allowed' : 'hover:border-violet-500/30'">
+      ▶ Run 5
+    </button>
+
+    <!-- Start Pipeline button -->
+    <button @click="startPipeline()"
+            :disabled="running"
+            class="px-5 py-2 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center gap-2"
+            :class="running ? 'opacity-60 cursor-not-allowed' : 'active:scale-95 brand-glow'"
+            :style="running ? 'background: rgba(124,58,237,0.3); color: var(--text-3);' : 'background: linear-gradient(135deg, var(--brand), #9333ea); color: #fff;'">
+      <template x-if="!running"><span>▶ Start Pipeline</span></template>
+      <template x-if="running">
+        <span class="flex items-center gap-2">
+          <svg class="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+          Running…
+        </span>
+      </template>
+    </button>
+  </div>
+
+  <!-- Last run result banner -->
+  <div x-show="lastResult !== null" x-transition
+       class="rounded-xl px-4 py-2.5 text-xs font-medium flex items-center gap-2"
+       :class="lastResult === 0
+         ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+         : 'bg-red-500/10 text-red-400 border border-red-500/20'">
+    <span x-text="lastResult === 0 ? '✓ Pipeline completed successfully' : '✗ Pipeline finished with errors'"></span>
+  </div>
+
+</div>
+
+
+<!-- ════════════════════════════════════════════════ ANALYTICS STRIP -->
+<div class="overflow-x-auto">
+  <div class="flex gap-4 min-w-[700px] pb-1">
+
+    <!-- Total Views -->
+    <div class="relative flex-1 glass rounded-2xl p-5 stat-accent stat-accent-indigo">
+      <div class="text-xs uppercase tracking-widest mb-2" style="color: var(--text-3);">Total Views</div>
+      <div class="text-2xl font-bold mono" style="color: var(--text-1);"
+           x-text="analytics && analytics.channel ? Number(analytics.channel.total_views).toLocaleString() : '—'"></div>
+      <div class="flex items-center gap-1 mt-1">
+        <span class="text-xs" style="color: var(--text-3);">YouTube channel</span>
+      </div>
+      <div class="absolute right-4 top-4 text-3xl opacity-10">👁</div>
+    </div>
+
+    <!-- Subscribers -->
+    <div class="relative flex-1 glass rounded-2xl p-5 stat-accent stat-accent-emerald">
+      <div class="text-xs uppercase tracking-widest mb-2" style="color: var(--text-3);">Subscribers</div>
+      <div class="text-2xl font-bold mono text-emerald-400"
+           x-text="analytics && analytics.channel ? (analytics.channel.hidden_subs ? 'Hidden' : Number(analytics.channel.subscribers).toLocaleString()) : '—'"></div>
+      <div class="text-xs mt-1" style="color: var(--text-3);">channel</div>
+      <div class="absolute right-4 top-4 text-3xl opacity-10">👥</div>
+    </div>
+
+    <!-- Channel Videos -->
+    <div class="relative flex-1 glass rounded-2xl p-5 stat-accent stat-accent-amber">
+      <div class="text-xs uppercase tracking-widest mb-2" style="color: var(--text-3);">Channel Videos</div>
+      <div class="text-2xl font-bold mono text-amber-400"
+           x-text="analytics && analytics.channel ? analytics.channel.video_count : '—'"></div>
+      <div class="text-xs mt-1" style="color: var(--text-3);">on YouTube</div>
+      <div class="absolute right-4 top-4 text-3xl opacity-10">🎬</div>
+    </div>
+
+    <!-- Videos Assembled -->
+    <div class="relative flex-1 glass rounded-2xl p-5 stat-accent stat-accent-sky">
+      <div class="text-xs uppercase tracking-widest mb-2" style="color: var(--text-3);">Assembled</div>
+      <div class="text-2xl font-bold mono text-sky-400"
+           x-text="videos.filter(v => v.stages.assemble).length"></div>
+      <div class="text-xs mt-1" style="color: var(--text-3);">videos ready</div>
+      <div class="absolute right-4 top-4 text-3xl opacity-10">⚙</div>
+    </div>
+
+    <!-- Uploaded -->
+    <div class="relative flex-1 glass rounded-2xl p-5 stat-accent stat-accent-rose">
+      <div class="text-xs uppercase tracking-widest mb-2" style="color: var(--text-3);">Uploaded</div>
+      <div class="text-2xl font-bold mono text-rose-400"
+           x-text="videos.filter(v => v.stages.upload).length"></div>
+      <div class="text-xs mt-1" style="color: var(--text-3);">to YouTube</div>
+      <div class="absolute right-4 top-4 text-3xl opacity-10">🚀</div>
+    </div>
+
+    <!-- Drive Backed Up -->
+    <div class="relative flex-1 glass rounded-2xl p-5 stat-accent stat-accent-green">
+      <div class="text-xs uppercase tracking-widest mb-2" style="color: var(--text-3);">Drive Backup</div>
+      <div class="text-2xl font-bold mono text-green-400"
+           x-text="analytics && analytics.videos ? analytics.videos.filter(v => v.drive_id).length : '—'"></div>
+      <div class="text-xs mt-1" style="color: var(--text-3);">in Google Drive</div>
+      <div class="absolute right-4 top-4 text-3xl opacity-10">☁</div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════ ANALYTICS API METRICS (28d) -->
+<template x-if="analytics && analytics.channel_analytics && analytics.channel_analytics.views > 0">
+  <div class="overflow-x-auto">
+    <div class="flex gap-4 min-w-[500px] pb-1">
+
+      <div class="relative flex-1 glass rounded-2xl px-5 py-4" style="border-top: 2px solid rgba(56,189,248,0.4);">
+        <div class="text-xs uppercase tracking-widest mb-1.5" style="color: var(--text-3);">Watch Time <span class="normal-case opacity-60">(28d)</span></div>
+        <div class="text-xl font-bold mono text-sky-300"
+             x-text="analytics.channel_analytics.estimatedMinutesWatched
+               ? (analytics.channel_analytics.estimatedMinutesWatched >= 60
+                  ? (analytics.channel_analytics.estimatedMinutesWatched / 60).toFixed(1) + 'h'
+                  : Math.round(analytics.channel_analytics.estimatedMinutesWatched) + 'm')
+               : '—'"></div>
+      </div>
+
+      <div class="relative flex-1 glass rounded-2xl px-5 py-4" style="border-top: 2px solid rgba(167,139,250,0.4);">
+        <div class="text-xs uppercase tracking-widest mb-1.5" style="color: var(--text-3);">Impressions <span class="normal-case opacity-60">(28d)</span></div>
+        <div class="text-xl font-bold mono text-violet-300"
+             x-text="analytics.channel_analytics.impressions != null
+               ? Number(analytics.channel_analytics.impressions).toLocaleString()
+               : '—'"></div>
+      </div>
+
+      <div class="relative flex-1 glass rounded-2xl px-5 py-4" style="border-top: 2px solid rgba(244,63,94,0.4);">
+        <div class="text-xs uppercase tracking-widest mb-1.5" style="color: var(--text-3);">Click-Through Rate <span class="normal-case opacity-60">(28d)</span></div>
+        <div class="text-xl font-bold mono text-pink-300"
+             x-text="analytics.channel_analytics.impressionClickThroughRate != null
+               ? (analytics.channel_analytics.impressionClickThroughRate * 100).toFixed(2) + '%'
+               : '—'"></div>
+      </div>
+
+      <div class="relative flex-1 glass rounded-2xl px-5 py-4" style="border-top: 2px solid rgba(16,185,129,0.4);">
+        <div class="text-xs uppercase tracking-widest mb-1.5" style="color: var(--text-3);">Avg View Duration <span class="normal-case opacity-60">(28d)</span></div>
+        <div class="text-xl font-bold mono text-emerald-300"
+             x-text="analytics.channel_analytics.averageViewDuration
+               ? (analytics.channel_analytics.averageViewDuration >= 60
+                  ? Math.floor(analytics.channel_analytics.averageViewDuration / 60) + 'm ' + (analytics.channel_analytics.averageViewDuration % 60).toFixed(0) + 's'
+                  : analytics.channel_analytics.averageViewDuration.toFixed(0) + 's')
+               : '—'"></div>
+      </div>
+
+    </div>
+  </div>
+</template>
+
+
+<!-- ════════════════════════════════════════════════ YPP MONETIZATION PROGRESS -->
+<template x-if="analytics && analytics.monetization">
+  <div class="glass rounded-2xl p-6">
+    <div class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+      <div>
+        <h2 class="text-sm font-semibold" style="color: var(--text-1);">YouTube Partner Program</h2>
+        <p class="text-xs mt-0.5" style="color: var(--text-3);">Track your YPP eligibility progress</p>
+      </div>
+      <template x-if="analytics.monetization.eligible">
+        <span class="text-xs px-3 py-1.5 rounded-full font-semibold"
+              style="background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3);">✓ Eligible for YPP</span>
+      </template>
+      <template x-if="!analytics.monetization.eligible">
+        <span class="text-xs px-3 py-1.5 rounded-full font-medium"
+              style="background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.25);">Not yet eligible</span>
+      </template>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+      <!-- Subscribers -->
+      <div>
+        <div class="flex justify-between text-xs mb-2">
+          <span style="color: var(--text-2);">Subscribers</span>
+          <span class="mono font-medium" style="color: var(--text-1);"
+                x-text="`${analytics.monetization.subscribers_current.toLocaleString()} / 1,000`"></span>
+        </div>
+        <div class="h-2.5 rounded-full overflow-hidden" style="background: rgba(255,255,255,0.06);">
+          <div class="h-full rounded-full progress-bar-animated transition-all duration-700"
+               style="background: linear-gradient(90deg, var(--brand), #9333ea, var(--brand));"
+               :style="`width: ${analytics.monetization.subscribers_pct}%`"></div>
+        </div>
+        <div class="flex justify-between mt-1.5 text-xs mono">
+          <span style="color: var(--text-3);" x-text="`${analytics.monetization.subscribers_pct}% of goal`"></span>
+          <span style="color: var(--text-3);"
+                x-text="`${Math.max(0, 1000 - analytics.monetization.subscribers_current).toLocaleString()} remaining`"></span>
+        </div>
+      </div>
+
+      <!-- Watch Hours -->
+      <div>
+        <div class="flex justify-between text-xs mb-2">
+          <span style="color: var(--text-2);">Watch Hours (28d)</span>
+          <span class="mono font-medium" style="color: var(--text-1);"
+                x-text="`${analytics.monetization.watch_hours_current}h / 4,000h`"></span>
+        </div>
+        <div class="h-2.5 rounded-full overflow-hidden" style="background: rgba(255,255,255,0.06);">
+          <div class="h-full rounded-full progress-bar-animated transition-all duration-700"
+               style="background: linear-gradient(90deg, #f59e0b, #f97316, #f59e0b);"
+               :style="`width: ${analytics.monetization.watch_hours_pct}%`"></div>
+        </div>
+        <div class="flex justify-between mt-1.5 text-xs mono">
+          <span style="color: var(--text-3);" x-text="`${analytics.monetization.watch_hours_pct}% of goal`"></span>
+          <span style="color: var(--text-3);"
+                x-text="`${Math.max(0, 4000 - analytics.monetization.watch_hours_current)}h remaining`"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+
+<!-- ════════════════════════════════════════════════ TWO-COLUMN: CONNECT + PERFORMANCE -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  <!-- ── Left 1/3: YouTube Connect Card + Auth Status ── -->
+  <div class="flex flex-col gap-5">
+
+    <!-- YouTube Connect Card -->
+    <div class="glass rounded-2xl p-6 flex flex-col gap-4">
+      <h2 class="text-xs font-semibold uppercase tracking-widest" style="color: var(--text-3);">YouTube Account</h2>
+
+      <!-- Connected state -->
+      <template x-if="channel">
+        <div class="flex flex-col gap-3">
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border-2" style="border-color: rgba(16,185,129,0.4);">
+              <template x-if="channel.thumbnail">
+                <img :src="channel.thumbnail" class="w-full h-full object-cover" alt="">
+              </template>
+              <template x-if="!channel.thumbnail">
+                <div class="w-full h-full flex items-center justify-center text-lg" style="background: var(--bg-card);">C</div>
+              </template>
+            </div>
+            <div class="min-w-0">
+              <div class="font-semibold text-sm truncate" style="color: var(--text-1);" x-text="channel.title"></div>
+              <div class="flex items-center gap-1.5 mt-0.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span class="text-xs text-emerald-400">Connected</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 text-center">
+            <div class="rounded-xl py-2.5" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border);">
+              <div class="text-sm font-bold mono" style="color: var(--text-1);"
+                   x-text="analytics && analytics.channel ? (analytics.channel.hidden_subs ? '—' : Number(analytics.channel.subscribers).toLocaleString()) : '—'"></div>
+              <div class="text-xs mt-0.5" style="color: var(--text-3);">subscribers</div>
+            </div>
+            <div class="rounded-xl py-2.5" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border);">
+              <div class="text-sm font-bold mono" style="color: var(--text-1);"
+                   x-text="analytics && analytics.channel ? analytics.channel.video_count : '—'"></div>
+              <div class="text-xs mt-0.5" style="color: var(--text-3);">videos</div>
+            </div>
+          </div>
+
+          <a href="https://studio.youtube.com" target="_blank"
+             class="flex items-center justify-center gap-1.5 text-xs py-2 rounded-xl transition font-medium"
+             style="border: 1px solid var(--border); color: var(--text-2);">
+            YouTube Studio ↗
+          </a>
+        </div>
+      </template>
+
+      <!-- Not connected state -->
+      <template x-if="!channel">
+        <div class="flex flex-col gap-4">
+          <div class="flex flex-col items-center py-4 text-center">
+            <div class="text-4xl mb-3 opacity-30">📺</div>
+            <div class="text-sm font-medium" style="color: var(--text-2);">Not connected</div>
+            <div class="text-xs mt-1 max-w-[180px]" style="color: var(--text-3);">Connect your YouTube channel to upload and track analytics</div>
+          </div>
+          <button @click="connectYouTube()"
+                  :disabled="oauthInProgress || !secretsOk"
+                  class="w-full py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2"
+                  :class="!secretsOk
+                    ? 'opacity-40 cursor-not-allowed'
+                    : oauthInProgress
+                      ? 'opacity-60 cursor-wait'
+                      : 'active:scale-95'"
+                  style="background: #dc2626; color: #fff;">
+            <template x-if="!oauthInProgress"><span>▶ Connect YouTube</span></template>
+            <template x-if="oauthInProgress">
+              <span class="flex items-center gap-2">
+                <svg class="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                Browser opening…
+              </span>
+            </template>
+          </button>
+        </div>
+      </template>
+    </div>
+
+    <!-- Auth Status Card -->
+    <div class="glass rounded-2xl p-5">
+      <h2 class="text-xs font-semibold uppercase tracking-widest mb-4" style="color: var(--text-3);">Auth Status</h2>
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-xs" style="color: var(--text-2);">client_secrets.json</span>
+          </div>
+          <span class="text-xs font-medium px-2 py-0.5 rounded-full"
+                :class="secretsOk ? 'text-emerald-400 bg-emerald-500/10' : 'text-red-400 bg-red-500/10'"
+                x-text="secretsOk ? '✓ Found' : '✗ Missing'"></span>
+        </div>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-xs" style="color: var(--text-2);">token.json</span>
+          </div>
+          <span class="text-xs font-medium px-2 py-0.5 rounded-full"
+                :class="tokenOk ? 'text-emerald-400 bg-emerald-500/10' : 'text-amber-400 bg-amber-500/10'"
+                x-text="tokenOk ? '✓ Authorised' : 'Not yet'"></span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ── Right 2/3: Channel Performance Table ── -->
+  <div class="lg:col-span-2 glass rounded-2xl p-6 flex flex-col">
+    <div class="flex items-center justify-between mb-5 gap-2 flex-wrap">
+      <h2 class="text-sm font-semibold" style="color: var(--text-1);">Channel Performance</h2>
+      <div class="flex items-center gap-2">
+        <button @click="driveBackupAll()"
+                class="text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-medium"
+                style="border: 1px solid rgba(16,185,129,0.25); background: rgba(16,185,129,0.08); color: #10b981;">
+          ☁ Backup All to Drive
+        </button>
+        <button @click="fetchAnalytics()"
+                :disabled="analyticsLoading"
+                class="text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1.5"
+                style="border: 1px solid var(--border); color: var(--text-3);"
+                :class="analyticsLoading ? 'opacity-50 cursor-wait' : ''">
+          <span x-show="analyticsLoading" class="spin-slow">&#8635;</span>
+          <span>&#8635; Refresh</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <template x-if="analytics && analytics.videos && analytics.videos.length > 0">
+      <div class="overflow-x-auto flex-1">
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="uppercase tracking-wide" style="color: var(--text-3); border-bottom: 1px solid var(--border);">
+              <th class="text-left pb-3 font-medium pr-4">Title</th>
+              <th class="text-right pb-3 font-medium pr-4 whitespace-nowrap">Views</th>
+              <th class="text-right pb-3 font-medium pr-4">Likes</th>
+              <th class="text-right pb-3 font-medium pr-4">Comments</th>
+              <th class="text-right pb-3 font-medium whitespace-nowrap">Published</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="v in analytics.videos" :key="v.id">
+              <tr class="hover:bg-white/[0.02] transition group" style="border-bottom: 1px solid rgba(255,255,255,0.03);">
+                <td class="py-3 pr-4">
+                  <div class="flex items-center gap-2">
+                    <template x-if="v.thumbnail">
+                      <img :src="v.thumbnail" class="w-10 h-7 object-cover rounded flex-shrink-0 opacity-80 group-hover:opacity-100 transition" alt="">
+                    </template>
+                    <div>
+                      <div class="font-medium line-clamp-1 group-hover:text-violet-400 transition" style="color: var(--text-1);" x-text="v.title"></div>
+                      <div class="flex items-center gap-2 mt-0.5">
+                        <a :href="`https://youtu.be/${v.id}`" target="_blank"
+                           class="transition" style="color: var(--text-3);">↗ watch</a>
+                        <template x-if="v.drive_id">
+                          <span class="flex items-center gap-0.5 text-green-400/70">
+                            ☁ <span class="text-green-400/50">Drive</span>
+                          </span>
+                        </template>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td class="py-3 pr-4 text-right mono" style="color: var(--text-2);" x-text="Number(v.views).toLocaleString()"></td>
+                <td class="py-3 pr-4 text-right mono" style="color: var(--text-3);" x-text="Number(v.likes).toLocaleString()"></td>
+                <td class="py-3 pr-4 text-right mono" style="color: var(--text-3);" x-text="Number(v.comments).toLocaleString()"></td>
+                <td class="py-3 text-right mono whitespace-nowrap" style="color: var(--text-3);"
+                    x-text="v.published ? new Date(v.published).toLocaleDateString() : '—'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </template>
+
+    <!-- Placeholder: not connected -->
+    <template x-if="!analytics || !analytics.connected">
+      <div class="flex-1 flex flex-col items-center justify-center py-12 text-center">
+        <div class="text-4xl mb-3 opacity-25">📊</div>
+        <div class="text-sm font-medium mb-1" style="color: var(--text-2);">No analytics data</div>
+        <div class="text-xs max-w-xs" style="color: var(--text-3);">
+          Connect your YouTube account and upload videos to see performance analytics here.
+        </div>
+        <template x-if="!tokenOk">
+          <button @click="connectYouTube()"
+                  :disabled="!secretsOk"
+                  class="mt-4 px-4 py-2 rounded-xl text-xs font-semibold text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  style="background: #dc2626;">
+            ▶ Connect YouTube
+          </button>
+        </template>
+        <template x-if="tokenOk && (!analytics || !analytics.connected)">
+          <button @click="fetchAnalytics()"
+                  class="mt-4 px-4 py-2 rounded-xl text-xs font-semibold transition"
+                  style="background: rgba(124,58,237,0.15); border: 1px solid rgba(124,58,237,0.3); color: var(--brand-lt);">
+            &#8635; Load Analytics
+          </button>
+        </template>
+      </div>
+    </template>
+
+    <!-- Placeholder: connected but no videos -->
+    <template x-if="analytics && analytics.connected && analytics.videos && analytics.videos.length === 0">
+      <div class="flex-1 flex flex-col items-center justify-center py-12 text-center">
+        <div class="text-4xl mb-3 opacity-25">🎬</div>
+        <div class="text-sm font-medium mb-1" style="color: var(--text-2);">No uploaded videos yet</div>
+        <div class="text-xs" style="color: var(--text-3);">Run the pipeline and upload a video to see stats here.</div>
+      </div>
+    </template>
+  </div>
+
+</div>
+
+
+<!-- ════════════════════════════════════════════════ VIDEO LIBRARY GRID -->
+<div x-show="videos.length > 0">
+  <div class="flex items-center justify-between mb-5">
+    <h2 class="text-sm font-semibold" style="color: var(--text-1);">Video Library</h2>
+    <span class="text-xs mono" style="color: var(--text-3);" x-text="`${videos.length} video${videos.length !== 1 ? 's' : ''}`"></span>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+    <template x-for="v in videos" :key="v.slug">
+      <div class="glass rounded-2xl overflow-hidden card-hover group">
+
+        <!-- Thumbnail -->
+        <div class="aspect-video relative overflow-hidden thumb-hover" style="background: rgba(255,255,255,0.03);">
+          <template x-if="v.thumbnail_url">
+            <img :src="v.thumbnail_url"
+                 class="w-full h-full object-cover"
+                 :alt="v.keyword">
+          </template>
+          <template x-if="!v.thumbnail_url">
+            <div class="w-full h-full flex items-center justify-center text-5xl opacity-20">🎬</div>
+          </template>
+
+          <!-- Gradient overlay -->
+          <div class="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent"></div>
+
+          <!-- YT badge -->
+          <template x-if="v.video_id">
+            <div class="absolute top-2 right-2">
+              <span class="text-xs bg-red-600 text-white px-2 py-0.5 rounded-full font-bold mono">YT</span>
+            </div>
+          </template>
+
+          <!-- Drive badge -->
+          <template x-if="_videoAnalytics(v.slug) && _videoAnalytics(v.slug).drive_id">
+            <div class="absolute top-2 left-2">
+              <span class="text-xs text-white px-2 py-0.5 rounded-full font-medium flex items-center gap-1"
+                    style="background: rgba(22,163,74,0.75);">
+                ☁ Drive
+              </span>
+            </div>
+          </template>
+
+          <!-- View count badge -->
+          <template x-if="_videoAnalytics(v.slug) && _videoAnalytics(v.slug).views > 0">
+            <div class="absolute bottom-2 right-2">
+              <span class="mono text-xs text-violet-300 px-2 py-0.5 rounded-full"
+                    style="background: rgba(0,0,0,0.7);"
+                    x-text="Number(_videoAnalytics(v.slug).views).toLocaleString() + ' views'"></span>
+            </div>
+          </template>
+
+          <!-- File size badge -->
+          <template x-if="v.size_mb">
+            <div class="absolute bottom-2 left-2">
+              <span class="mono text-xs px-2 py-0.5 rounded-full"
+                    style="background: rgba(0,0,0,0.7); color: var(--text-3);"
+                    x-text="`${v.size_mb} MB`"></span>
+            </div>
+          </template>
+        </div>
+
+        <!-- Card body -->
+        <div class="p-4 space-y-3">
+          <p class="text-sm font-medium leading-snug line-clamp-2" style="color: var(--text-1);"
+             x-text="v.title || v.keyword"></p>
+
+          <!-- Stage progress bar -->
+          <div class="space-y-1">
+            <div class="flex items-center justify-between">
+              <span class="text-xs" style="color: var(--text-3);">Stages</span>
+              <span class="text-xs mono" style="color: var(--text-3);"
+                    x-text="`${Object.values(v.stages).filter(Boolean).length}/8`"></span>
+            </div>
+            <div class="h-1.5 rounded-full overflow-hidden" style="background: rgba(255,255,255,0.06);">
+              <div class="h-full rounded-full transition-all duration-500"
+                   style="background: linear-gradient(90deg, var(--green), #34d399);"
+                   :style="`width: ${(Object.values(v.stages).filter(Boolean).length / 8) * 100}%`"></div>
+            </div>
+          </div>
+
+          <!-- Publish schedule -->
+          <template x-if="v.publish_at">
+            <div class="text-xs mono">
+              <span style="color: var(--text-3);">Publishes: </span>
+              <span class="text-amber-400" x-text="new Date(v.publish_at).toLocaleString()"></span>
+            </div>
+          </template>
+
+          <!-- YouTube links -->
+          <template x-if="v.video_id">
+            <div class="flex flex-col gap-1 pt-2" style="border-top: 1px solid var(--border);">
+              <a :href="`https://studio.youtube.com/video/${v.video_id}/edit`"
+                 target="_blank"
+                 class="text-xs font-medium transition"
+                 style="color: var(--brand-lt);">
+                YouTube Studio ↗
+              </a>
+              <a :href="`https://youtu.be/${v.video_id}`"
+                 target="_blank"
+                 class="text-xs transition"
+                 style="color: var(--text-3);">
+                Watch on YouTube ↗
+              </a>
+            </div>
+          </template>
+
+          <!-- Manual upload button -->
+          <template x-if="v.stages.assemble && !v.stages.upload">
+            <div class="pt-2" style="border-top: 1px solid var(--border);">
+              <button @click="uploadVideo(v.slug)"
+                      :disabled="uploadingSlug === v.slug || !tokenOk || running"
+                      class="w-full py-2 rounded-xl text-xs font-semibold transition-all duration-200 flex items-center justify-center gap-1.5"
+                      :class="uploadingSlug === v.slug
+                        ? 'opacity-60 cursor-wait'
+                        : !tokenOk
+                          ? 'opacity-40 cursor-not-allowed'
+                          : 'active:scale-95'"
+                      :style="!tokenOk || (uploadingSlug === v.slug)
+                        ? 'background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: var(--text-3);'
+                        : 'background: rgba(220,38,38,0.8); color: #fff;'">
+                <template x-if="uploadingSlug !== v.slug">
+                  <span>▲ Upload to YouTube</span>
+                </template>
+                <template x-if="uploadingSlug === v.slug">
+                  <span class="flex items-center gap-1.5">
+                    <svg class="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    Uploading…
+                  </span>
+                </template>
+              </button>
+              <p x-show="!tokenOk" class="text-xs text-center mt-1" style="color: var(--text-3);">Connect YouTube first</p>
+            </div>
+          </template>
+
+          <!-- Drive backup button -->
+          <template x-if="v.stages.upload && !(_videoAnalytics(v.slug) && _videoAnalytics(v.slug).drive_id)">
+            <div class="pt-1">
+              <button @click="driveBackup(v.slug)"
+                      :disabled="driveBackingSlug === v.slug"
+                      class="w-full py-1.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-1.5"
+                      :class="driveBackingSlug === v.slug ? 'opacity-60 cursor-wait' : 'active:scale-95'"
+                      style="border: 1px solid rgba(16,185,129,0.25); background: rgba(16,185,129,0.06); color: #10b981;">
+                <template x-if="driveBackingSlug !== v.slug">
+                  <span>☁ Backup to Drive</span>
+                </template>
+                <template x-if="driveBackingSlug === v.slug">
+                  <span class="flex items-center gap-1.5">
+                    <svg class="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    Backing up…
+                  </span>
+                </template>
+              </button>
+            </div>
+          </template>
+
+          <!-- Auto-reply button (uploaded videos only) -->
+          <template x-if="v.stages.upload">
+            <button @click="autoReply(v.slug)"
+                    :disabled="replyingSlug === v.slug"
+                    class="w-full py-1.5 rounded-xl text-xs font-medium transition-all flex items-center justify-center gap-1.5 border mt-1"
+                    :class="replyingSlug === v.slug
+                      ? 'border-white/5 text-gray-500 cursor-wait'
+                      : 'border-blue-700/30 bg-blue-900/20 text-blue-400 hover:bg-blue-900/40 active:scale-95'">
+              <span x-show="replyingSlug !== v.slug">💬 Auto-Reply Comments</span>
+              <span x-show="replyingSlug === v.slug" class="flex items-center gap-1">
+                <svg class="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                Replying…
+              </span>
+            </button>
+          </template>
+
+          <!-- Make Short button (assembled videos) -->
+          <template x-if="v.stages.assemble">
+            <button @click="makeShort(v.slug)"
+                    :disabled="shortingSlug === v.slug"
+                    class="w-full py-1.5 rounded-xl text-xs font-medium transition-all flex items-center justify-center gap-1.5 border mt-1"
+                    :class="shortingSlug === v.slug
+                      ? 'border-white/5 text-gray-500 cursor-wait'
+                      : 'border-pink-700/30 bg-pink-900/20 text-pink-400 hover:bg-pink-900/40 active:scale-95'">
+              <span x-show="shortingSlug !== v.slug">⚡ Make Short</span>
+              <span x-show="shortingSlug === v.slug" class="flex items-center gap-1">
+                <svg class="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                Generating…
+              </span>
+            </button>
+          </template>
+
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════ EMPTY STATE -->
+<div x-show="videos.length === 0 && !running"
+     class="flex flex-col items-center justify-center py-32 text-center">
+  <div class="text-6xl mb-4 opacity-25">🎬</div>
+  <div class="text-xl font-semibold grad-text mb-2">No videos yet</div>
+  <div class="text-sm max-w-sm" style="color: var(--text-3);">
+    Click <span class="font-semibold" style="color: var(--brand-lt);">▶ Start Pipeline</span> to kick off keyword research,
+    script writing, voice synthesis, and video assembly.
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════ LOG TERMINAL -->
+<div x-show="showLog || running" x-transition>
+  <div class="glass rounded-2xl overflow-hidden">
+    <!-- Terminal header -->
+    <div class="flex items-center gap-2 px-4 py-3" style="border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.25);">
+      <!-- Traffic light dots -->
+      <div class="flex items-center gap-1.5">
+        <div class="w-3 h-3 rounded-full" style="background: rgba(239,68,68,0.6);"></div>
+        <div class="w-3 h-3 rounded-full" style="background: rgba(245,158,11,0.6);"></div>
+        <div class="w-3 h-3 rounded-full" style="background: rgba(16,185,129,0.6);"></div>
+      </div>
+      <span class="text-xs mono ml-2" style="color: var(--text-3);">master.py</span>
+      <div x-show="running" class="flex items-center gap-1.5 text-xs" style="color: var(--brand-lt);">
+        <span class="spin-slow">&#8635;</span>
+        <span>running</span>
+      </div>
+      <div class="ml-auto flex items-center gap-2">
+        <!-- Log level legend -->
+        <span class="hidden sm:flex items-center gap-3 text-xs">
+          <span class="flex items-center gap-1" style="color: var(--text-3);">
+            <span class="w-2 h-2 rounded-sm" style="background: rgba(124,58,237,0.4);"></span>INFO
+          </span>
+          <span class="flex items-center gap-1 text-amber-400/70">
+            <span class="w-2 h-2 rounded-sm bg-amber-500/50"></span>WARN
+          </span>
+          <span class="flex items-center gap-1 text-red-400/70">
+            <span class="w-2 h-2 rounded-sm bg-red-500/50"></span>ERROR
+          </span>
+        </span>
+        <button @click="logs = []"
+                class="text-xs px-2.5 py-1 rounded-lg transition"
+                style="color: var(--text-3); border: 1px solid var(--border);">Clear</button>
+        <button @click="showLog = !showLog"
+                class="text-xs px-2.5 py-1 rounded-lg transition"
+                style="color: var(--text-3); border: 1px solid var(--border);"
+                x-text="showLog ? 'Hide' : 'Show'"></button>
+      </div>
+    </div>
+
+    <div class="mono text-xs leading-relaxed p-4 h-72 overflow-y-auto space-y-0.5"
+         style="background: rgba(2,2,7,0.7);"
+         id="log-box"
+         x-ref="logBox">
+      <template x-for="(entry, i) in logs" :key="i">
+        <div class="py-0.5 pl-3 rounded-sm flex items-baseline gap-2"
+             :class="`log-${entry.level}`">
+          <span class="flex-shrink-0 text-xs" style="color: var(--text-3);" x-text="entry.ts"></span>
+          <!-- Level pill -->
+          <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium mono leading-none"
+                :class="{
+                  'bg-violet-500/15 text-violet-400':  entry.level === 'INFO',
+                  'bg-amber-500/15 text-amber-400':    entry.level === 'WARNING',
+                  'bg-red-500/15 text-red-400':        entry.level === 'ERROR',
+                }"
+                x-text="entry.level === 'WARNING' ? 'WARN' : entry.level"></span>
+          <span :class="{
+                  'text-gray-400':  entry.level === 'INFO',
+                  'text-amber-300': entry.level === 'WARNING',
+                  'text-red-300':   entry.level === 'ERROR',
+                }"
+                x-text="entry.clean"></span>
+        </div>
+      </template>
+      <div x-show="logs.length === 0" class="py-2 pl-3 italic" style="color: var(--text-3);">
+        Waiting for pipeline output…
+      </div>
+    </div>
+  </div>
+</div>
+
+
+</main>
+
+<!-- ════════════════════════════════════════════════ FOOTER -->
+<footer class="mt-12 py-5 text-center text-xs mono" style="border-top: 1px solid var(--border); color: var(--text-3);">
+  ytauto &nbsp;·&nbsp; claude-sonnet-4-6 &nbsp;·&nbsp; edge-tts &nbsp;·&nbsp; FFmpeg &nbsp;·&nbsp; Pexels
+</footer>
+
+
+<script>
+const STAGE_LABELS = {
+  research: 'Research',
+  script:   'Script',
+  voice:    'Voice',
+  visuals:  'Visuals',
+  assemble: 'Assemble',
+  seo:      'SEO',
+  thumbnail:'Thumb',
+  upload:   'Upload',
+};
+
+function dash() {
+  return {
+    // ── State ───────────────────────────────────────────────────────────────
+    running:        false,
+    count:          1,
+    dryRun:         false,
+    logs:           [],
+    videos:         [],
+    showLog:        false,
+    wsConnected:    false,
+    currentKeyword: null,
+    lastResult:     null,
+    tokenOk:        false,
+    secretsOk:      false,
+    ws:             null,
+    _reconnectTimer: null,
+    STAGE_LABELS,
+
+    // YouTube channel
+    channel:        null,
+    oauthInProgress: false,
+    uploadingSlug:  null,
+    driveBackingSlug: null,
+    replyingSlug: null,
+    shortingSlug: null,
+    secretsType:    'missing',
+
+    // Analytics
+    analytics:        null,
+    analyticsLoading: false,
+
+    // Settings modal
+    showSettings: false,
+    settingsData: {},
+
+    stages: {
+      research:  'pending',
+      script:    'pending',
+      voice:     'pending',
+      visuals:   'pending',
+      assemble:  'pending',
+      seo:       'pending',
+      thumbnail: 'pending',
+      upload:    'pending',
+    },
+
+    // ── Computed ─────────────────────────────────────────────────────────────
+    get completedStages() {
+      return Object.values(this.stages).filter(s => s === 'done').length;
+    },
+    get stageProgress() {
+      return Math.round((this.completedStages / 8) * 100);
+    },
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    init() {
+      fetch('/api/status')
+        .then(r => r.json())
+        .then(d => {
+          this.running   = d.running;
+          this.videos    = d.videos;
+          this.tokenOk   = d.token_ok;
+          this.secretsOk = d.secrets_ok;
+        });
+      this._connectWS();
+      this._fetchChannel();
+      this.fetchAnalytics();
+    },
+
+    async _fetchChannel() {
+      try {
+        const r = await fetch('/api/youtube/channel');
+        const d = await r.json();
+        if (d.connected) this.channel = d;
+      } catch(_) {}
+    },
+
+    // ── Analytics ────────────────────────────────────────────────────────────
+    async fetchAnalytics() {
+      if (this.analyticsLoading) return;
+      this.analyticsLoading = true;
+      try {
+        const r = await fetch('/api/youtube/analytics');
+        const d = await r.json();
+        this.analytics = d;
+      } catch(_) {
+        this.analytics = { connected: false, reason: 'network_error' };
+      } finally {
+        this.analyticsLoading = false;
+      }
+    },
+
+    _videoAnalytics(slug) {
+      if (!this.analytics || !this.analytics.videos) return null;
+      return this.analytics.videos.find(v => v.slug === slug) || null;
+    },
+
+    // ── Settings modal ────────────────────────────────────────────────────────
+    async openSettings() {
+      this.showSettings = true;
+      try {
+        const r = await fetch('/api/settings');
+        const d = await r.json();
+        this.settingsData = d;
+      } catch(_) {}
+    },
+
+    async saveSettings() {
+      try {
+        await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.settingsData),
+        });
+      } catch(_) {}
+      this.showSettings = false;
+    },
+
+    // ── WebSocket ─────────────────────────────────────────────────────────────
+    _connectWS() {
+      if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      try {
+        this.ws = new WebSocket(`${proto}//${location.host}/ws`);
+      } catch(e) {
+        this._scheduleReconnect();
+        return;
+      }
+      this.ws.onopen    = () => { this.wsConnected = true; };
+      this.ws.onmessage = (e) => { try { this._handle(JSON.parse(e.data)); } catch(_){} };
+      this.ws.onerror   = () => {};
+      this.ws.onclose   = () => { this.wsConnected = false; this._scheduleReconnect(); };
+    },
+
+    _scheduleReconnect() {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = setTimeout(() => this._connectWS(), 2500);
+    },
+
+    // ── Message handler ───────────────────────────────────────────────────────
+    _handle(msg) {
+      if (msg.type === 'ping') return;
+
+      if (msg.type === 'init') {
+        this.running         = msg.running;
+        this.videos          = msg.videos;
+        this.tokenOk         = msg.token_ok;
+        this.secretsOk       = msg.secrets_ok;
+        this.secretsType     = msg.secrets_type || 'missing';
+        this.oauthInProgress = msg.oauth_running || false;
+        if (msg.channel) this.channel = msg.channel;
+        return;
+      }
+      if (msg.type === 'youtube_connected') {
+        this.oauthInProgress = false;
+        if (msg.success) {
+          this.tokenOk = true;
+          if (msg.channel) this.channel = msg.channel;
+        }
+        return;
+      }
+      if (msg.type === 'upload_complete') {
+        this.uploadingSlug = null;
+        this.videos = msg.videos;
+        return;
+      }
+      if (msg.type === 'drive_backup_complete') {
+        if (this.driveBackingSlug === msg.slug) this.driveBackingSlug = null;
+        // Refresh analytics so Drive badge appears
+        this.fetchAnalytics();
+        return;
+      }
+      if (msg.type === 'auto_reply_done') {
+        if (this.replyingSlug === msg.slug) this.replyingSlug = null;
+        return;
+      }
+      if (msg.type === 'short_done') {
+        if (this.shortingSlug === msg.slug) this.shortingSlug = null;
+        this.fetchAnalytics();
+        return;
+      }
+      if (msg.type === 'pipeline_start') {
+        this.running    = true;
+        this.showLog    = true;
+        this.lastResult = null;
+        this._resetStages();
+        return;
+      }
+      if (msg.type === 'pipeline_end') {
+        this.running    = false;
+        this.videos     = msg.videos;
+        this.lastResult = msg.exit_code;
+        if (msg.exit_code === 0) {
+          this._finishAllDone();
+          this.fetchAnalytics();
+        }
+        return;
+      }
+      if (msg.type === 'log') {
+        const tsMatch = msg.text.match(/^(\d{4}-\d{2}-\d{2} [\d:,]+)/);
+        const ts    = tsMatch ? tsMatch[1].replace(',', '.') : '';
+        const clean = msg.text.replace(/^\d{4}-\d{2}-\d{2} [\d:,]+ \[\w+\] [\w._]+: ?/, '').trim() || msg.text;
+
+        const last = this.logs[this.logs.length - 1];
+        if (last && last.ts === ts && last.clean === clean) return;
+
+        this.logs.push({ level: msg.level, ts, clean });
+        if (this.logs.length > 600) this.logs.splice(0, 50);
+
+        this._parseStage(msg.text);
+
+        this.$nextTick(() => {
+          const el = this.$refs.logBox;
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+      }
+    },
+
+    // ── Stage parser ──────────────────────────────────────────────────────────
+    _parseStage(text) {
+      const kw = text.match(/VIDEO \d+:\s+(.+)$/);
+      if (kw) this.currentKeyword = kw[1].trim();
+
+      const t = text;
+
+      if (/research: Starting/.test(t))           this._set('research', 'running');
+      if (/Final keywords/.test(t))                { this._set('research','done'); this._set('script','running'); }
+
+      if (/script: Generating/.test(t))            this._set('script', 'running');
+      if (/script: Script saved/.test(t))          { this._set('script','done'); this._set('voice','running'); }
+      if (/script: Script cache/.test(t))          { this._set('script','done'); this._set('voice','running'); }
+
+      if (/voice: Synth/.test(t))                  this._set('voice', 'running');
+      if (/voice: Voice (saved|cache)/.test(t))    { this._set('voice','done'); this._set('visuals','running'); }
+
+      if (/visuals:.*clip_/.test(t))               this._set('visuals', 'running');
+      if (/clips ready/.test(t))                   { this._set('visuals','done'); this._set('assemble','running'); }
+
+      if (/assemble: Audio duration/.test(t))           this._set('assemble', 'running');
+      if (/Transcribing with Whisper/.test(t))          this._set('assemble', 'running');
+      if (/Rendering final video/.test(t))              this._set('assemble', 'running');
+      if (/Final video/.test(t))                        { this._set('assemble','done'); this._set('seo','running'); }
+      if (/Video cache hit|assemble:.*cache/.test(t))   { this._set('assemble','done'); this._set('seo','running'); }
+
+      if (/seo: Generating/.test(t))              this._set('seo', 'running');
+      if (/seo: SEO (metadata saved|cache)/.test(t)) { this._set('seo','done'); this._set('thumbnail','running'); }
+
+      if (/thumb: Thumbnail (saved|cache)/.test(t))  { this._set('thumbnail','done'); this._set('upload','running'); }
+
+      if (/Upload complete|already uploaded/.test(t))  this._set('upload','done');
+      if (/DRY-RUN.*Skipping/.test(t))                this._set('upload','done');
+
+      if (/\[ERROR\]/.test(t))   this._markRunningAsError();
+    },
+
+    _set(name, state) {
+      if (this.stages[name] !== undefined) this.stages[name] = state;
+    },
+    _resetStages() {
+      Object.keys(this.stages).forEach(k => this.stages[k] = 'pending');
+      this.currentKeyword = null;
+    },
+    _finishAllDone() {
+      Object.keys(this.stages).forEach(k => {
+        if (this.stages[k] === 'running') this.stages[k] = 'done';
+      });
+    },
+    _markRunningAsError() {
+      for (const k of Object.keys(this.stages)) {
+        if (this.stages[k] === 'running') { this.stages[k] = 'error'; break; }
+      }
+    },
+
+    // ── Actions ───────────────────────────────────────────────────────────────
+    async startPipeline() {
+      if (this.running) return;
+      const params = new URLSearchParams({ count: this.count, dry_run: this.dryRun });
+      const res = await fetch(`/api/run?${params}`, { method: 'POST' });
+      if (!res.ok) {
+        const d = await res.json();
+        alert(d.error || 'Failed to start pipeline');
+      }
+    },
+
+    async connectYouTube() {
+      if (this.oauthInProgress || !this.secretsOk) return;
+      this.oauthInProgress = true;
+      this.showLog = true;
+      const res = await fetch('/api/youtube/connect', { method: 'POST' });
+      if (!res.ok) {
+        const d = await res.json();
+        this.oauthInProgress = false;
+        alert(d.error || 'Failed to start OAuth');
+      }
+    },
+
+    async uploadVideo(slug) {
+      if (this.uploadingSlug || !this.tokenOk) return;
+      this.uploadingSlug = slug;
+      this.showLog = true;
+      const res = await fetch(`/api/upload/${slug}`, { method: 'POST' });
+      if (!res.ok) {
+        const d = await res.json();
+        this.uploadingSlug = null;
+        alert(d.error || 'Failed to start upload');
+      }
+    },
+
+    async driveBackup(slug) {
+      if (this.driveBackingSlug) return;
+      this.driveBackingSlug = slug;
+      this.showLog = true;
+      try {
+        const res = await fetch(`/api/drive-backup/${slug}`, { method: 'POST' });
+        const d = await res.json();
+        if (d.status === 'already_backed_up') {
+          this.driveBackingSlug = null;
+          this.fetchAnalytics();
+        } else if (!res.ok) {
+          this.driveBackingSlug = null;
+          alert(d.error || 'Drive backup failed');
+        }
+      } catch(e) {
+        this.driveBackingSlug = null;
+      }
+    },
+
+    async driveBackupAll() {
+      this.showLog = true;
+      const res = await fetch('/api/drive-backup-all', { method: 'POST' });
+      const d = await res.json();
+      if (d.status === 'nothing_to_backup') alert('All videos already backed up to Drive.');
+    },
+
+    async autoReply(slug) {
+      if (this.replyingSlug) return;
+      this.replyingSlug = slug;
+      this.showLog = true;
+      try {
+        const res = await fetch(`/api/auto-reply/${slug}`, { method: 'POST' });
+        if (!res.ok) {
+          const d = await res.json();
+          this.replyingSlug = null;
+          alert(d.error || 'Auto-reply failed');
+        }
+      } catch(e) { this.replyingSlug = null; }
+    },
+
+    async makeShort(slug) {
+      if (this.shortingSlug) return;
+      this.shortingSlug = slug;
+      this.showLog = true;
+      try {
+        const res = await fetch(`/api/make-short/${slug}`, { method: 'POST' });
+        if (!res.ok) {
+          const d = await res.json();
+          this.shortingSlug = null;
+          alert(d.error || 'Short generation failed');
+        }
+      } catch(e) { this.shortingSlug = null; }
+    },
+  };
+}
+</script>
+
+</body>
+</html>

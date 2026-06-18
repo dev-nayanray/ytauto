@@ -1,0 +1,28 @@
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+jinja2>=3.1.3
+
+# ── Core pipeline ─────────────────────────────────────────────────────────────
+anthropic>=0.25.0
+edge-tts>=6.1.9
+Pillow>=10.3.0
+python-dotenv>=1.0.1
+requests>=2.31.0
+
+# ── Keyword research ───────────────────────────────────────────────────────────
+pytrends>=4.9.2
+
+# ── YouTube upload ─────────────────────────────────────────────────────────────
+google-api-python-client>=2.130.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0
+
+# ── Speech-to-text captions ────────────────────────────────────────────────────
+# openai-whisper installs PyTorch automatically.
+# For CPU-only Windows machines install torch FIRST to avoid the larger CUDA build:
+#
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+#   pip install openai-whisper
+#
+openai-whisper>=20231117
