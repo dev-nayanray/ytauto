@@ -175,7 +175,7 @@ def _scan_videos() -> list[dict[str, Any]]:
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
-    return _tmpl.TemplateResponse("index.html", {"request": request})
+    return _tmpl.TemplateResponse(request, "index.html")
 
 
 def _secrets_type() -> str:
