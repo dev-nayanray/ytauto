@@ -1,0 +1,115 @@
+{
+  "description": "Learn AI tools, ChatGPT, Python automation, and machine learning — explained in Bangla for beginners! 🇧🇩\n\nAt Code Creativity BD, we make artificial intelligence and tech skills accessible to everyone — no CS degree required. Whether you want to automate daily tasks with AI, use ChatGPT like a pro, or start your machine learning journey, we break it all down step by step.\n\n🤖 What you'll learn:\n✅ AI tools & ChatGPT tips and tricks\n✅ Python automation for non-programmers\n✅ Machine learning tutorials (beginner-friendly)\n✅ AI automation for productivity & freelancing\n✅ Latest tech trends explained simply\n\nNew videos every week — subscribe + hit 🔔 so you never miss a lesson!\n\nWhether you're a student, job seeker, or freelancer, Code Creativity BD gives you real, practical AI skills to move forward.\n\n📌 Subscribe now and start your AI journey today!",
+  "keywords": [
+    "AI tools Bangla",
+    "ChatGPT tutorial Bangla",
+    "python automation for beginners",
+    "artificial intelligence tutorial",
+    "machine learning tutorial Bangla",
+    "how to use AI",
+    "AI automation",
+    "learn AI in Bangla",
+    "ChatGPT tips and tricks",
+    "tech tutorial Bangla",
+    "AI for beginners",
+    "python for non-programmers",
+    "free AI tools",
+    "Code Creativity BD",
+    "AI productivity tools"
+  ],
+  "improvement_notes": [
+    "OLD: Description opened in Bengali only, limiting discoverability for YouTube's English-dominant search algorithm. NEW: Opens with a clear English value proposition targeting top search queries like 'AI tools', 'ChatGPT', 'Python automation' — the channel's actual top-performing video topics.",
+    "OLD: Heavy focus on web development (HTML, CSS, PHP, WordPress) which doesn't match the actual published content (AI, ML, Python automation). NEW: Description is fully aligned with real video topics to improve session consistency and reduce bounce rate.",
+    "OLD: Keywords were generic and misaligned ('creativity', 'development') with no long-tail search intent. NEW: 15 keywords mix high-volume broad terms ('artificial intelligence tutorial') with specific long-tail queries ('python automation for non-programmers') matching real viewer search behavior.",
+    "OLD: No mention of the target audience persona. NEW: Explicitly calls out students, job seekers, and freelancers — the primary Bangladeshi tech learner demographic — improving click-through rate from search.",
+    "OLD: Hashtags were stuffed into the description body, which YouTube now discourages. NEW: Clean, readable description with natural keyword embedding. Hashtags removed from body (should be placed separately in video descriptions instead).",
+    "OLD: Upload frequency was vague ('প্রতি সপ্তাহে'). NEW: 'New videos every week' stated clearly in English near the subscribe CTA, reinforcing subscriber value.",
+    "OLD: Description was ~950 characters of mostly Bengali text, limiting international Bengali diaspora search reach. NEW: Bilingual approach (English structure, Bengali audience signal) maximizes both local and diaspora discoverability."
+  ],
+  "trailer_hook": "Are you overwhelmed by AI tools and don't know where to start? Every week there's a new ChatGPT update, a new automation tool, a new thing to learn — and it feels impossible to keep up. Hi, I'm from Code Creativity BD, and I teach AI tools, Python automation, and machine learning in simple Bangla — step by step, no experience needed. If you're a student, freelancer, or just curious about AI, this channel is built for you. Hit subscribe and let's learn AI together — starting today.",
+  "banner_tagline": "AI Skills. Bangla Language. Real Results.",
+  "about_links": [
+    {
+      "label": "🤖 Start Here: AI for Beginners",
+      "note": "Link to your beginner AI playlist or most-viewed video to immediately direct new visitors to proven content"
+    },
+    {
+      "label": "💬 Join Our Community",
+      "note": "Link to a Facebook Group, Telegram, or WhatsApp community for Bengali learners — community drives return visits"
+    },
+    {
+      "label": "🛠️ Free AI Tools List",
+      "note": "Link to a Google Doc or blog post listing recommended free AI tools — high utility = high click rate"
+    },
+    {
+      "label": "📧 Contact / Collaborate",
+      "note": "Email or form link for sponsorship and collaboration inquiries — builds professional credibility early"
+    }
+  ],
+  "featured_sections": [
+    {
+      "title": "🚀 Start Here — AI for Complete Beginners",
+      "type": "playlist",
+      "note": "Your most critical section. New visitors need a clear entry point. Compile your AI overview and ChatGPT videos here. This reduces bounce rate significantly."
+    },
+    {
+      "title": "🤖 ChatGPT Tips & Tricks",
+      "type": "playlist",
+      "note": "ChatGPT is your highest search-volume seed topic. A dedicated playlist captures repeat searchers and builds topical authority on this keyword cluster."
+    },
+    {
+      "title": "🐍 Python Automation — No Experience Needed",
+      "type": "playlist",
+      "note": "Your top-viewed video is Python automation. Group all related content here to increase average session watch time and signal topic depth to YouTube's algorithm."
+    },
+    {
+      "title": "🧠 Machine Learning Made Simple",
+      "type": "playlist",
+      "note": "Second most viewed topic cluster. A dedicated ML playlist helps YouTube understand your channel's niche authority and recommend your content to ML searchers."
+    },
+    {
+      "title": "⚡ AI Automation for Daily Tasks",
+      "type": "playlist",
+      "note": "Targets the high-intent query 'how to automate daily tasks with AI' — matches one of your existing top videos and attracts productivity-focused viewers."
+    }
+  ],
+  "seo_tips": [
+    "CRITICAL — Fix Topic-Content Mismatch: Your channel description and keywords previously mentioned web dev (HTML, CSS, WordPress) but your videos are about AI and ML. YouTube's algorithm penalizes channels where metadata doesn't match content. Update ALL channel-level metadata to reflect AI, ChatGPT, and Python automation exclusively.",
+    "Title Formula for Growth: Use this proven structure for every video — '[Specific Outcome] | [Tool/Topic] | Bangla Tutorial'. Example: 'ChatGPT দিয়ে ৩০ মিনিটে ব্যবসার Plan তৈরি করুন | ChatGPT Tips Bangla'. Front-load the primary keyword in the first 40 characters so it shows in search results.",
+    "Thumbnail Strategy for 4-Subscriber Stage: At your current size, CTR (click-through rate) matters more than watch time. Use a 3-element thumbnail formula: (1) Your face showing strong emotion, (2) Bold 3-4 word Bengali text in high-contrast color, (3) A visual of the AI tool being discussed. Test this against your current thumbnails over 2 weeks.",
+    "Publish Consistency Over Volume: With 28 videos and 4 subscribers, your issue is likely inconsistent upload schedule or unoptimized titles, not content quality. Commit to 1 video per week minimum, published on the same day/time. YouTube's algorithm rewards channels with predictable upload cadence by showing them to existing subscribers more reliably.",
+    "Leverage Shorts for Rapid Discovery: Create 30-60 second Shorts showing '1 AI trick in 30 seconds' — clip these from your existing long-form videos. Shorts have a separate discovery algorithm that doesn't depend on existing subscriber count, making them ideal for 0-1K subscriber channels to break out. Tag them with the same keywords as your main content to reinforce topical authority."
+  ],
+  "generated_at": "2026-06-18T20:56:59.303524",
+  "applied": true,
+  "channel_name": "Code Creativity Bd",
+  "niche": "AI & Tech",
+  "current_description": "স্বাগতম CodeCreativityBD-তে — যেখানে শুরু হয় আপনার কোডিং জার্নি, সহজ ভাষায় এবং বাস্তব উদাহরণে!\nআপনি কি ওয়েব ডেভেলপমেন্ট শিখতে চান? চাকরি কিংবা ফ্রিল্যান্সিংয়ের জন্য প্রফেশনাল স্কিল তৈরি করতে চান? তাহলে আপনি একদম সঠিক চ্যানেলে এসেছেন!\n\nআমরা বিশ্বাস করি, কোড শেখা কঠিন নয় — যদি শেখানো হয় সঠিকভাবে। তাই CodeCreativityBD-তে আপনি পাবেন বাংলা ভাষায় সহজবোধ্য এবং বাস্তবভিত্তিক কোডিং টিউটোরিয়াল, যা নতুনদের জন্য সহায়ক এবং অভিজ্ঞদের জন্য কার্যকর।\n\n🎯 এই চ্যানেলে যা শিখবেন:\n🚀 ফুল-স্ট্যাক ওয়েব ডেভেলপমেন্ট (HTML, CSS, JS, PHP, Python ইত্যাদি)\n🛠️ ওয়ার্ডপ্রেস, থিম ও প্লাগইন কাস্টমাইজেশন\n📂 রিয়েল-ওয়ার্ল্ড প্রজেক্ট যা আপনার পোর্টফোলিও বানাতে সাহায্য করবে\n💡 প্র্যাকটিক্যাল টিপস, টুলস ও প্রোগ্রামিং হ্যাকস\n\n✅ নতুন ভিডিও আপলোড হয় প্রতি সপ্তাহে\n🔔 এখনই সাবস্ক্রাইব করুন এবং বেল চাপুন, যেন কোন ভিডিও মিস না হয়\n🌐 আমাদের কমিউনিটিতে যুক্ত হোন — একসাথে শিখি, গড়ে তুলি ভবিষ্যৎ!\n\nCodeCreativityBD – শেখা হবে এবার সহজে, প্রফেশনালভাবে।\n\n#CodeCreativityBD #বাংলায়প্রোগ্রামিং #কোডিংটিউটোরিয়াল #ওয়েবডেভেলপমেন্ট \n",
+  "current_keywords": [
+    "ai",
+    "code",
+    "development",
+    "creativity",
+    "codecreativitybd",
+    "ai-automation"
+  ],
+  "applied_at": "2026-06-18T20:59:07.146067",
+  "applied_description": "Learn AI tools, ChatGPT, Python automation, and machine learning — explained in Bangla for beginners! 🇧🇩\n\nAt Code Creativity BD, we make artificial intelligence and tech skills accessible to everyone — no CS degree required. Whether you want to automate daily tasks with AI, use ChatGPT like a pro, or start your machine learning journey, we break it all down step by step.\n\n🤖 What you'll learn:\n✅ AI tools & ChatGPT tips and tricks\n✅ Python automation for non-programmers\n✅ Machine learning tutorials (beginner-friendly)\n✅ AI automation for productivity & freelancing\n✅ Latest tech trends explained simply\n\nNew videos every week — subscribe + hit 🔔 so you never miss a lesson!\n\nWhether you're a student, job seeker, or freelancer, Code Creativity BD gives you real, practical AI skills to move forward.\n\n📌 Subscribe now and start your AI journey today!",
+  "applied_keywords": [
+    "AI tools Bangla",
+    "ChatGPT tutorial Bangla",
+    "python automation for beginners",
+    "artificial intelligence tutorial",
+    "machine learning tutorial Bangla",
+    "how to use AI",
+    "AI automation",
+    "learn AI in Bangla",
+    "ChatGPT tips and tricks",
+    "tech tutorial Bangla",
+    "AI for beginners",
+    "python for non-programmers",
+    "free AI tools",
+    "Code Creativity BD",
+    "AI productivity tools"
+  ]
+}

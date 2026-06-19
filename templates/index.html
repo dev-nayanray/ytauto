@@ -77,6 +77,14 @@
       from { opacity: 0; transform: translateX(-8px); }
       to   { opacity: 1; transform: translateX(0); }
     }
+    @keyframes pipelinePulse {
+      0%,100% { opacity: 0.5; box-shadow: 0 0 0 0 rgba(99,102,241,0.35); }
+      50%     { opacity: 1;   box-shadow: 0 0 0 6px rgba(99,102,241,0); }
+    }
+    @keyframes pipelineTextPulse {
+      0%,100% { opacity: 1; }
+      50%     { opacity: 0.5; }
+    }
 
     .spin       { animation: spin 1s linear infinite; display: inline-block; }
     .spin-slow  { animation: spin 1.2s linear infinite; display: inline-block; }
@@ -292,6 +300,68 @@
     .stat-accent-sky::before     { background: linear-gradient(90deg, #38bdf8, #7dd3fc); }
     .stat-accent-rose::before    { background: linear-gradient(90deg, #f43f5e, #fb7185); }
     .stat-accent-green::before   { background: linear-gradient(90deg, #22c55e, #4ade80); }
+
+    /* ── OVERVIEW — CHANNEL HERO ── */
+    .hero-card {
+      position: relative; overflow: hidden;
+      background: linear-gradient(135deg,
+        rgba(99,102,241,0.18) 0%,
+        rgba(124,58,237,0.10) 40%,
+        rgba(16,185,129,0.06) 100%);
+      border: 1px solid rgba(99,102,241,0.25);
+    }
+    .hero-card::before {
+      content:''; position:absolute; inset:0;
+      background: radial-gradient(ellipse 60% 80% at 5% 50%,rgba(99,102,241,0.12),transparent 70%);
+      pointer-events:none;
+    }
+    .hero-card::after {
+      content:''; position:absolute; top:-60px; right:-60px;
+      width:200px; height:200px; border-radius:50%;
+      background: radial-gradient(circle, rgba(124,58,237,0.15), transparent 70%);
+      pointer-events:none;
+    }
+
+    /* ── OVERVIEW — KPI CARDS ── */
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      position: relative;
+      overflow: hidden;
+      transition: transform .2s, border-color .2s, box-shadow .2s;
+    }
+    .kpi-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(99,102,241,0.3);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3), 0 0 24px rgba(99,102,241,0.06);
+    }
+    .kpi-glow { position:absolute; bottom:0; left:0; right:0; height:1px; }
+    .kpi-num  { font-size:2rem; font-weight:700; letter-spacing:-0.04em; line-height:1; font-family:'JetBrains Mono',monospace; }
+
+    /* ── OVERVIEW — SVG RING PROGRESS ── */
+    .ring-track  { fill:none; stroke:rgba(255,255,255,0.06); stroke-width:6; }
+    .ring-fill   { fill:none; stroke-width:6; stroke-linecap:round; transition:stroke-dashoffset 1s cubic-bezier(.4,0,.2,1); transform-origin:50% 50%; transform:rotate(-90deg); }
+
+    /* ── OVERVIEW — MINI SCORE BAR ── */
+    @keyframes scoreReveal { from { width:0 } }
+    .score-bar-fill { animation: scoreReveal 1.2s cubic-bezier(.4,0,.2,1) both; }
+
+    /* ── OVERVIEW — TREND PILL ── */
+    .trend-up   { background:rgba(16,185,129,0.12); color:#10b981; }
+    .trend-down { background:rgba(239,68,68,0.10);  color:#ef4444; }
+    .trend-flat { background:rgba(148,163,184,0.10);color:#94a3b8; }
+
+    /* ── OVERVIEW — VIDEO ROW ── */
+    .vid-row {
+      display:flex; align-items:center; gap:12px;
+      padding:10px 14px; border-radius:14px;
+      border:1px solid var(--border);
+      background:var(--bg-card);
+      transition:background .15s, border-color .15s;
+    }
+    .vid-row:hover { background:var(--bg-card-2); border-color:rgba(99,102,241,0.2); }
 
     /* ── RANK BADGES ── */
     .rank-top5  { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
@@ -712,6 +782,29 @@
         <span class="nav-label">Calendar</span>
       </div>
 
+      <div class="nav-item" :class="activeSection==='costs' ? 'active' : ''" @click="navTo('costs')">
+        <span class="nav-icon">💰</span>
+        <span class="nav-label">Costs</span>
+      </div>
+
+      <div class="nav-item" :class="activeSection==='goals' ? 'active' : ''" @click="navTo('goals')">
+        <span class="nav-icon">🎯</span>
+        <span class="nav-label">Goals</span>
+        <span x-show="goalsData.active > 0"
+              class="nav-badge"
+              x-text="goalsData.active"></span>
+      </div>
+
+      <div class="nav-item" :class="activeSection==='agent' ? 'active' : ''" @click="navTo('agent')">
+        <span class="nav-icon">🤖</span>
+        <span class="nav-label">Agent</span>
+      </div>
+
+      <div class="nav-item" :class="activeSection==='channel_seo' ? 'active' : ''" @click="navTo('channel_seo')">
+        <span class="nav-icon">🔍</span>
+        <span class="nav-label">Channel SEO</span>
+      </div>
+
       <div class="nav-item" :class="activeSection==='settings' ? 'active' : ''" @click="navTo('settings')">
         <span class="nav-icon">⚙</span>
         <span class="nav-label">Settings</span>
@@ -781,222 +874,540 @@
       <!-- ══════════════════════ OVERVIEW ══════════════════════ -->
       <div x-show="activeSection==='overview'" class="slide-in">
 
-        <!-- Stats row -->
-        <div class="grid gap-4 mb-6" style="grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));">
+        <!-- ── CHANNEL HERO ─────────────────────────────────────────── -->
+        <div class="hero-card rounded-3xl p-5 mb-5">
+          <div class="flex items-center gap-5" style="position:relative;z-index:1;">
 
-          <!-- Videos produced -->
-          <div class="glass rounded-2xl p-5 stat-accent stat-accent-indigo card-hover">
-            <div class="flex items-center gap-2 mb-3">
-              <div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm" style="background: rgba(99,102,241,0.15);">🎬</div>
-              <span class="text-xs font-medium" style="color: var(--text-3);">Videos</span>
+            <!-- Avatar -->
+            <div class="flex-shrink-0">
+              <template x-if="analytics?.channel?.thumbnail">
+                <img :src="analytics.channel.thumbnail"
+                     class="w-16 h-16 rounded-2xl object-cover ring-2"
+                     style="ring-color:rgba(99,102,241,0.4);" alt="channel">
+              </template>
+              <template x-if="!analytics?.channel?.thumbnail">
+                <div class="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl"
+                     style="background:rgba(99,102,241,0.15);">📺</div>
+              </template>
             </div>
-            <div class="font-bold mono" style="font-size:1.6rem; letter-spacing:-0.02em; color: var(--text-1);" x-text="videos.length"></div>
-            <div class="text-xs mt-1" style="color: var(--text-3);">produced</div>
+
+            <!-- Channel info -->
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <h1 class="text-lg font-bold truncate" style="color:var(--text-1);"
+                    x-text="analytics?.channel?.title || 'Your Channel'"></h1>
+                <span x-show="tokenOk"
+                      class="text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0"
+                      style="background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.2);">
+                  ● Connected
+                </span>
+              </div>
+              <div class="flex items-center gap-4 mt-1.5 flex-wrap">
+                <span class="text-xs" style="color:var(--text-3);">
+                  <span class="font-semibold" style="color:var(--text-2);"
+                        x-text="(analytics?.summary?.subscribers||0).toLocaleString()"></span> subscribers
+                </span>
+                <span class="text-xs" style="color:var(--text-3);">·</span>
+                <span class="text-xs" style="color:var(--text-3);">
+                  <span class="font-semibold" style="color:var(--text-2);"
+                        x-text="(analytics?.channel?.total_views||0).toLocaleString()"></span> total views
+                </span>
+                <span class="text-xs" style="color:var(--text-3);">·</span>
+                <span class="text-xs" style="color:var(--text-3);">
+                  <span class="font-semibold" style="color:var(--text-2);"
+                        x-text="sysInfo?.videos_uploaded||0"></span> videos uploaded
+                </span>
+              </div>
+            </div>
+
+            <!-- Channel health score (right side) -->
+            <div class="flex-shrink-0 text-center" style="min-width:90px;">
+              <div class="text-xs font-semibold mb-1.5" style="color:var(--text-3);">Channel Health</div>
+              <div class="relative inline-flex items-center justify-center">
+                <svg width="72" height="72" viewBox="0 0 72 72">
+                  <circle cx="36" cy="36" r="30" class="ring-track" style="stroke-width:5;"/>
+                  <circle cx="36" cy="36" r="30" class="ring-fill"
+                          style="stroke:url(#health-grad);stroke-dasharray:188.5;"
+                          :style="`stroke-dashoffset:${188.5*(1-channelHealthScore/100)}`"/>
+                  <defs>
+                    <linearGradient id="health-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stop-color="#6366f1"/>
+                      <stop offset="100%" stop-color="#10b981"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                  <span class="font-bold mono" style="font-size:1.1rem;color:var(--text-1);"
+                        x-text="channelHealthScore"></span>
+                  <span class="text-xs" style="color:var(--text-3);font-size:9px;">/ 100</span>
+                </div>
+              </div>
+              <div class="text-xs mt-1" style="color:var(--text-3);"
+                   x-text="channelHealthScore>=80?'Excellent':channelHealthScore>=60?'Good':channelHealthScore>=40?'Growing':'Starting'"></div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ── KPI METRIC CARDS ─────────────────────────────────────── -->
+        <div class="grid gap-3 mb-5" style="grid-template-columns:repeat(5,1fr);">
+
+          <!-- Videos -->
+          <div class="kpi-card">
+            <div class="kpi-glow" style="background:linear-gradient(90deg,#6366f1,#818cf8);"></div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-lg">🎬</span>
+              <span class="text-xs px-1.5 py-0.5 rounded-lg trend-flat"
+                    x-text="(sysInfo?.videos_uploaded||0)+' up'"></span>
+            </div>
+            <div class="kpi-num" style="color:var(--text-1);" x-text="videos.length||0"></div>
+            <div class="text-xs mt-1.5" style="color:var(--text-3);">Videos produced</div>
           </div>
 
-          <!-- Views -->
-          <div class="glass rounded-2xl p-5 stat-accent stat-accent-sky card-hover">
-            <div class="flex items-center gap-2 mb-3">
-              <div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm" style="background: rgba(56,189,248,0.12);">👁</div>
-              <span class="text-xs font-medium" style="color: var(--text-3);">Views</span>
+          <!-- Views 28d -->
+          <div class="kpi-card">
+            <div class="kpi-glow" style="background:linear-gradient(90deg,#38bdf8,#7dd3fc);"></div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-lg">👁</span>
+              <span class="text-xs px-1.5 py-0.5 rounded-lg"
+                    style="background:rgba(56,189,248,0.1);color:#38bdf8;">28d</span>
             </div>
-            <div class="font-bold mono" style="font-size:1.6rem; letter-spacing:-0.02em; color: var(--text-1);"
-                 x-text="analytics?.summary?.total_views != null ? analytics.summary.total_views.toLocaleString() : '—'"></div>
-            <div class="text-xs mt-1" style="color: var(--text-3);">last 28 days</div>
+            <div class="kpi-num" style="color:var(--text-1);"
+                 x-text="(analytics?.summary?.total_views||0).toLocaleString()"></div>
+            <div class="text-xs mt-1.5" style="color:var(--text-3);">Total views</div>
           </div>
 
-          <!-- Watch time -->
-          <div class="glass rounded-2xl p-5 stat-accent stat-accent-emerald card-hover">
-            <div class="flex items-center gap-2 mb-3">
-              <div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm" style="background: rgba(16,185,129,0.12);">⏱</div>
-              <span class="text-xs font-medium" style="color: var(--text-3);">Watch Time</span>
+          <!-- Watch Hours -->
+          <div class="kpi-card">
+            <div class="kpi-glow" style="background:linear-gradient(90deg,#10b981,#34d399);"></div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-lg">⏱</span>
+              <span class="text-xs px-1.5 py-0.5 rounded-lg"
+                    style="background:rgba(16,185,129,0.1);color:#10b981;"
+                    x-text="Math.round((analytics?.summary?.watch_hours||0)/40)+'% YPP'"></span>
             </div>
-            <div class="font-bold mono" style="font-size:1.6rem; letter-spacing:-0.02em; color: var(--text-1);"
-                 x-text="analytics?.summary?.watch_hours != null ? analytics.summary.watch_hours.toLocaleString() + 'h' : '—'"></div>
-            <div class="text-xs mt-1" style="color: var(--text-3);">hours</div>
+            <div class="kpi-num" style="color:var(--text-1);"
+                 x-text="(analytics?.summary?.watch_hours||0).toFixed(1)+'h'"></div>
+            <div class="text-xs mt-1.5" style="color:var(--text-3);">Watch hours</div>
           </div>
 
           <!-- Subscribers -->
-          <div class="glass rounded-2xl p-5 stat-accent stat-accent-amber card-hover">
-            <div class="flex items-center gap-2 mb-3">
-              <div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm" style="background: rgba(245,158,11,0.12);">👥</div>
-              <span class="text-xs font-medium" style="color: var(--text-3);">Subscribers</span>
+          <div class="kpi-card">
+            <div class="kpi-glow" style="background:linear-gradient(90deg,#f59e0b,#fbbf24);"></div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-lg">👥</span>
+              <span class="text-xs px-1.5 py-0.5 rounded-lg"
+                    style="background:rgba(245,158,11,0.1);color:#f59e0b;"
+                    x-text="Math.round((analytics?.summary?.subscribers||0)/10)+'% YPP'"></span>
             </div>
-            <div class="font-bold mono" style="font-size:1.6rem; letter-spacing:-0.02em; color: var(--text-1);"
-                 x-text="channel?.subscriberCount != null ? parseInt(channel.subscriberCount).toLocaleString() : (analytics?.summary?.subscribers != null ? analytics.summary.subscribers.toLocaleString() : '—')"></div>
-            <div class="text-xs mt-1" style="color: var(--text-3);">total</div>
+            <div class="kpi-num" style="color:var(--text-1);"
+                 x-text="(analytics?.summary?.subscribers||0).toLocaleString()"></div>
+            <div class="text-xs mt-1.5" style="color:var(--text-3);">Subscribers</div>
           </div>
 
-          <!-- Revenue / CPM -->
-          <div class="glass rounded-2xl p-5 stat-accent stat-accent-rose card-hover">
-            <div class="flex items-center gap-2 mb-3">
-              <div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm" style="background: rgba(244,63,94,0.12);">💰</div>
-              <span class="text-xs font-medium" style="color: var(--text-3);">Est. Revenue</span>
+          <!-- CTR -->
+          <div class="kpi-card">
+            <div class="kpi-glow" style="background:linear-gradient(90deg,#a78bfa,#c084fc);"></div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-lg">🖱</span>
+              <span class="text-xs px-1.5 py-0.5 rounded-lg"
+                    :class="(analytics?.summary?.ctr||0)>=4?'trend-up':(analytics?.summary?.ctr||0)>=2?'trend-flat':'trend-down'"
+                    x-text="(analytics?.summary?.ctr||0)>=4?'Great':(analytics?.summary?.ctr||0)>=2?'Avg':'Low'"></span>
             </div>
-            <div class="font-bold mono" style="font-size:1.6rem; letter-spacing:-0.02em; color: var(--text-1);"
-                 x-text="analytics?.summary?.estimated_revenue != null ? '$' + analytics.summary.estimated_revenue.toFixed(2) : '—'"></div>
-            <div class="text-xs mt-1" style="color: var(--text-3);">28 days</div>
+            <div class="kpi-num" style="color:var(--text-1);"
+                 x-text="(analytics?.summary?.ctr||0).toFixed(1)+'%'"></div>
+            <div class="text-xs mt-1.5" style="color:var(--text-3);">Click-through rate</div>
           </div>
 
-          <!-- YPP status -->
-          <div class="glass rounded-2xl p-5 stat-accent card-hover"
-               :class="analytics?.ypp?.eligible ? 'stat-accent-green' : 'stat-accent-amber'">
-            <div class="flex items-center gap-2 mb-3">
-              <div class="w-8 h-8 rounded-xl flex items-center justify-center text-sm"
-                   :style="analytics?.ypp?.eligible ? 'background:rgba(34,197,94,0.12)' : 'background:rgba(245,158,11,0.12)'">🏆</div>
-              <span class="text-xs font-medium" style="color: var(--text-3);">YPP Status</span>
+        </div>
+
+        <!-- ── MID ROW: YPP + GOALS ────────────────────────────────── -->
+        <div class="grid gap-4 mb-4" style="grid-template-columns:1fr 1.4fr;">
+
+          <!-- YPP Progress rings -->
+          <div class="glass rounded-2xl p-5">
+            <div class="flex items-center justify-between mb-4">
+              <div class="text-sm font-bold" style="color:var(--text-1);">YPP Progress</div>
+              <span class="text-xs px-2 py-0.5 rounded-full font-semibold"
+                    :style="analytics?.ypp?.eligible
+                      ? 'background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);'
+                      : 'background:rgba(245,158,11,0.1);color:#f59e0b;border:1px solid rgba(245,158,11,0.2);'"
+                    x-text="analytics?.ypp?.eligible ? '✓ Eligible' : 'In Progress'"></span>
             </div>
-            <template x-if="analytics?.ypp">
+            <div class="flex justify-around">
+              <!-- Subscribers ring -->
+              <div class="text-center">
+                <div class="relative inline-flex items-center justify-center mb-2">
+                  <svg width="80" height="80" viewBox="0 0 80 80">
+                    <circle cx="40" cy="40" r="33" class="ring-track"/>
+                    <circle cx="40" cy="40" r="33" class="ring-fill"
+                            style="stroke:#f59e0b;stroke-dasharray:207.3;"
+                            :style="`stroke-dashoffset:${207.3*(1-Math.min(1,(analytics?.ypp?.subscribers||0)/1000))}`"/>
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span class="font-bold" style="font-size:1rem;color:var(--text-1);"
+                          x-text="Math.min(100,Math.round((analytics?.ypp?.subscribers||0)/10))+'%'"></span>
+                  </div>
+                </div>
+                <div class="text-xs font-semibold" style="color:#f59e0b;">Subscribers</div>
+                <div class="text-xs mt-0.5" style="color:var(--text-3);"
+                     x-text="(analytics?.ypp?.subscribers||0)+' / 1,000'"></div>
+              </div>
+              <!-- Watch hours ring -->
+              <div class="text-center">
+                <div class="relative inline-flex items-center justify-center mb-2">
+                  <svg width="80" height="80" viewBox="0 0 80 80">
+                    <circle cx="40" cy="40" r="33" class="ring-track"/>
+                    <circle cx="40" cy="40" r="33" class="ring-fill"
+                            style="stroke:#10b981;stroke-dasharray:207.3;"
+                            :style="`stroke-dashoffset:${207.3*(1-Math.min(1,(analytics?.ypp?.watch_hours||0)/4000))}`"/>
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span class="font-bold" style="font-size:1rem;color:var(--text-1);"
+                          x-text="Math.min(100,Math.round((analytics?.ypp?.watch_hours||0)/40))+'%'"></span>
+                  </div>
+                </div>
+                <div class="text-xs font-semibold" style="color:#10b981;">Watch Hours</div>
+                <div class="text-xs mt-0.5" style="color:var(--text-3);"
+                     x-text="(analytics?.ypp?.watch_hours||0).toFixed(0)+' / 4,000h'"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Goals quick view -->
+          <div class="glass rounded-2xl p-5">
+            <div class="flex items-center justify-between mb-4">
+              <div class="text-sm font-bold" style="color:var(--text-1);">Active Goals</div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs px-2 py-0.5 rounded-full"
+                      style="background:rgba(99,102,241,0.12);color:#a5b4fc;"
+                      x-text="(goalsData.active||0)+' active'"></span>
+                <button @click="navTo('goals')" class="text-xs btn-ghost h-6 px-2 rounded-lg">→</button>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <template x-for="g in (goalsData.goals||[]).filter(g=>g.status==='active').slice(0,3)" :key="g.id">
+                <div>
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-1.5">
+                      <span x-text="g.icon" style="font-size:13px;"></span>
+                      <span class="text-xs font-medium truncate" style="color:var(--text-2);max-width:180px;"
+                            x-text="g.title"></span>
+                    </div>
+                    <span class="text-xs font-bold flex-shrink-0" style="color:var(--brand-lt);"
+                          x-text="Math.min(100,Math.round((g.current||0)/g.target*100))+'%'"></span>
+                  </div>
+                  <div class="h-1.5 rounded-full overflow-hidden" style="background:rgba(255,255,255,0.05);">
+                    <div class="h-full rounded-full score-bar-fill"
+                         :style="`width:${Math.min(100,(g.current||0)/g.target*100)}%;
+                                   background:${((g.current||0)/g.target)>=0.9?'linear-gradient(90deg,#10b981,#34d399)':'linear-gradient(90deg,#6366f1,#a78bfa)'}`">
+                    </div>
+                  </div>
+                  <div class="flex justify-between text-xs mt-1" style="color:var(--text-3);">
+                    <span x-text="(g.current||0).toLocaleString()+' '+g.unit"></span>
+                    <span x-text="g.target.toLocaleString()"></span>
+                  </div>
+                </div>
+              </template>
+              <div x-show="!(goalsData.goals||[]).some(g=>g.status==='active')"
+                   class="text-center text-xs py-3" style="color:var(--text-3);">
+                No active goals — <button @click="navTo('goals')" class="underline">set some goals</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── LOWER ROW: AGENT + COST + QUEUE ──────────────────────── -->
+        <div class="grid gap-4 mb-4" style="grid-template-columns:1fr 1fr 1fr;">
+
+          <!-- Agent insights -->
+          <div class="glass rounded-2xl p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <div class="w-7 h-7 rounded-xl flex items-center justify-center text-sm"
+                   style="background:rgba(139,92,246,0.15);">🤖</div>
+              <span class="text-sm font-bold" style="color:var(--text-1);">Agent Insights</span>
+              <span class="text-xs px-1.5 py-0.5 rounded-full ml-auto"
+                    :style="agentData.auto_learn?'background:rgba(16,185,129,0.1);color:#10b981;':'background:rgba(100,100,100,0.1);color:var(--text-3);'"
+                    x-text="agentData.auto_learn?'Auto ON':'Auto OFF'"></span>
+            </div>
+            <div class="space-y-2">
+              <div class="flex justify-between text-xs">
+                <span style="color:var(--text-3);">Avg views/video</span>
+                <span class="font-semibold" style="color:var(--text-1);"
+                      x-text="(agentData.insights?.avg_views||0).toLocaleString()"></span>
+              </div>
+              <div class="flex justify-between text-xs">
+                <span style="color:var(--text-3);">Best upload day</span>
+                <span class="font-semibold" style="color:#a78bfa;"
+                      x-text="agentData.insights?.best_upload_day||'—'"></span>
+              </div>
+              <div class="flex justify-between text-xs">
+                <span style="color:var(--text-3);">Engagement rate</span>
+                <span class="font-semibold"
+                      :style="(agentData.insights?.avg_engagement||0)>=0.04?'color:#10b981;':'color:var(--text-2);'"
+                      x-text="((agentData.insights?.avg_engagement||0)*100).toFixed(1)+'%'"></span>
+              </div>
+              <div class="flex justify-between text-xs">
+                <span style="color:var(--text-3);">Videos in memory</span>
+                <span class="font-semibold" style="color:var(--text-1);"
+                      x-text="agentData.memory_size||0"></span>
+              </div>
+              <div x-show="(agentData.recommendations||[]).length > 0"
+                   class="mt-2 pt-2" style="border-top:1px solid var(--border);">
+                <div class="text-xs font-medium mb-1" style="color:var(--text-3);">Top Rec:</div>
+                <div class="text-xs" style="color:var(--text-2);"
+                     x-text="agentData.recommendations?.[0]?.title||''"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- API Costs -->
+          <div class="glass rounded-2xl p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <div class="w-7 h-7 rounded-xl flex items-center justify-center text-sm"
+                   style="background:rgba(16,185,129,0.12);">💵</div>
+              <span class="text-sm font-bold" style="color:var(--text-1);">API Costs</span>
+              <button @click="navTo('costs')" class="text-xs btn-ghost h-5 px-2 rounded-lg ml-auto"
+                      style="font-size:10px;">Detail →</button>
+            </div>
+            <div class="space-y-2">
               <div>
-                <div class="font-bold text-sm" style="color: var(--text-1);"
-                     x-text="analytics.ypp.eligible ? '✓ Eligible' : 'In Progress'"></div>
-                <div class="mt-2 space-y-1">
-                  <div class="flex justify-between text-xs" style="color: var(--text-3);">
-                    <span x-text="(analytics.ypp.watch_hours||0).toFixed(0) + 'h / 4000h'"></span>
-                  </div>
-                  <div class="progress-bar"><div class="progress-fill" :style="'width:'+Math.min(100,(analytics.ypp.watch_hours||0)/40)+'%'"></div></div>
-                  <div class="flex justify-between text-xs mt-1" style="color: var(--text-3);">
-                    <span x-text="(analytics.ypp.subscribers||0) + ' / 1000 subs'"></span>
-                  </div>
-                  <div class="progress-bar"><div class="progress-fill" :style="'width:'+Math.min(100,(analytics.ypp.subscribers||0)/10)+'%'"></div></div>
+                <div class="flex justify-between text-xs mb-1">
+                  <span style="color:var(--text-3);">This month</span>
+                  <span class="font-bold" style="color:#10b981;"
+                        x-text="'$'+(costSummary?.this_month_cost_usd||0).toFixed(4)"></span>
                 </div>
               </div>
-            </template>
-            <template x-if="!analytics?.ypp">
-              <div class="text-xs" style="color: var(--text-3);">Loading…</div>
-            </template>
+              <div class="flex justify-between text-xs">
+                <span style="color:var(--text-3);">Per video avg</span>
+                <span class="font-semibold" style="color:var(--text-2);"
+                      x-text="'$'+(costSummary?.avg_cost_per_video||0).toFixed(4)"></span>
+              </div>
+              <div class="flex justify-between text-xs">
+                <span style="color:var(--text-3);">Total all time</span>
+                <span class="font-semibold" style="color:var(--text-2);"
+                      x-text="'$'+(costSummary?.total_cost_usd||0).toFixed(4)"></span>
+              </div>
+              <div class="flex justify-between text-xs">
+                <span style="color:var(--text-3);">API calls</span>
+                <span class="font-semibold" style="color:var(--text-2);"
+                      x-text="(costSummary?.total_calls||0).toLocaleString()"></span>
+              </div>
+              <!-- Budget bar -->
+              <div x-show="channelBudget > 0" class="mt-2 pt-2" style="border-top:1px solid var(--border);">
+                <div class="flex justify-between text-xs mb-1" style="color:var(--text-3);">
+                  <span>Budget used</span>
+                  <span x-text="Math.min(100,Math.round((costSummary?.this_month_cost_usd||0)/channelBudget*100))+'%'"></span>
+                </div>
+                <div class="progress-bar" style="height:4px;">
+                  <div class="progress-fill score-bar-fill"
+                       :style="`width:${Math.min(100,(costSummary?.this_month_cost_usd||0)/channelBudget*100)}%;
+                                 background:${(costSummary?.this_month_cost_usd||0)/channelBudget>0.8
+                                   ?'linear-gradient(90deg,#ef4444,#f87171)'
+                                   :'linear-gradient(90deg,#10b981,#34d399)'}`">
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
+          <!-- Queue & System -->
+          <div class="glass rounded-2xl p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <div class="w-7 h-7 rounded-xl flex items-center justify-center text-sm"
+                   style="background:rgba(99,102,241,0.15);">⚙️</div>
+              <span class="text-sm font-bold" style="color:var(--text-1);">System</span>
+            </div>
+            <div class="space-y-2">
+              <div class="flex justify-between text-xs">
+                <span style="color:var(--text-3);">Queue</span>
+                <span class="font-semibold" style="color:var(--text-1);"
+                      x-text="(queue?.filter(k=>k.status==='pending')?.length||0)+' pending'"></span>
+              </div>
+              <div class="flex justify-between text-xs">
+                <span style="color:var(--text-3);">Disk free</span>
+                <span class="font-semibold" style="color:var(--text-2);"
+                      x-text="(sysInfo?.disk_free_gb||'—')+'GB'"></span>
+              </div>
+              <!-- Disk bar -->
+              <div x-show="sysInfo?.disk_total_gb">
+                <div class="progress-bar" style="height:4px;">
+                  <div class="progress-fill score-bar-fill"
+                       :style="`width:${Math.min(100,100-(sysInfo?.disk_free_gb/sysInfo?.disk_total_gb*100))}%;
+                                 background:${(1-sysInfo?.disk_free_gb/sysInfo?.disk_total_gb)>0.85
+                                   ?'linear-gradient(90deg,#ef4444,#f87171)'
+                                   :'linear-gradient(90deg,#6366f1,#a78bfa)'}`">
+                  </div>
+                </div>
+              </div>
+              <div class="flex justify-between text-xs">
+                <span style="color:var(--text-3);">Shorts</span>
+                <span class="font-semibold" style="color:var(--text-2);"
+                      x-text="(sysInfo?.shorts_total||0)+' total'"></span>
+              </div>
+              <!-- Integrations -->
+              <div class="mt-2 pt-2 flex items-center gap-2.5 flex-wrap" style="border-top:1px solid var(--border);">
+                <div class="flex items-center gap-1.5">
+                  <div class="w-1.5 h-1.5 rounded-full" :class="tokenOk?'bg-emerald-400':'bg-red-400'"></div>
+                  <span class="text-xs" style="color:var(--text-3);">YT</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <div class="w-1.5 h-1.5 rounded-full" :class="sheetUrl?'bg-emerald-400':'bg-amber-400'"></div>
+                  <span class="text-xs" style="color:var(--text-3);">Sheets</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <div class="w-1.5 h-1.5 rounded-full"
+                       :class="telegramOk===true?'bg-emerald-400':telegramOk===false?'bg-red-400':'bg-gray-600'"></div>
+                  <span class="text-xs" style="color:var(--text-3);">TG</span>
+                </div>
+                <button @click="testTelegram()" class="text-xs btn-ghost h-5 px-2 rounded-lg ml-auto"
+                        style="font-size:10px;">Test TG</button>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- Integrations bar -->
-        <div class="glass rounded-2xl p-4 mb-6 flex flex-wrap items-center gap-4">
-          <span class="text-xs font-semibold" style="color: var(--text-3);">Integrations</span>
-          <div class="h-4 w-px" style="background: var(--border);"></div>
-
-          <!-- YouTube Auth -->
-          <div class="flex items-center gap-2">
-            <div class="w-2 h-2 rounded-full" :class="tokenOk ? 'bg-emerald-400' : 'bg-red-400'"></div>
-            <span class="text-xs" style="color: var(--text-2);">YouTube</span>
-            <span class="text-xs px-2 py-0.5 rounded-full font-medium"
-                  :class="tokenOk ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'"
-                  x-text="tokenOk ? 'Connected' : 'Disconnected'"></span>
-          </div>
-
-          <!-- Google Sheets -->
-          <div class="flex items-center gap-2">
-            <div class="w-2 h-2 rounded-full" :class="sheetUrl ? 'bg-emerald-400' : 'bg-amber-400'"></div>
-            <span class="text-xs" style="color: var(--text-2);">Sheets</span>
-            <template x-if="sheetUrl">
-              <a :href="sheetUrl" target="_blank" class="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-400/10 text-emerald-400 hover:underline">Open ↗</a>
-            </template>
-            <template x-if="!sheetUrl">
-              <span class="text-xs px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-400">Not linked</span>
-            </template>
-          </div>
-
-          <!-- Telegram -->
-          <div class="flex items-center gap-2">
-            <div class="w-2 h-2 rounded-full" :class="telegramOk === true ? 'bg-emerald-400' : telegramOk === false ? 'bg-red-400' : 'bg-gray-500'"></div>
-            <span class="text-xs" style="color: var(--text-2);">Telegram</span>
-            <button @click="testTelegram()"
-                    class="text-xs px-2 py-0.5 rounded-full font-medium transition btn-ghost"
-                    style="font-size:11px; height:auto;">
-              <span x-text="telegramOk === true ? '✓ OK' : telegramOk === false ? '✗ Failed' : 'Test'"></span>
-            </button>
-          </div>
-
-          <div class="ml-auto flex gap-2">
-            <button @click="syncAllSheets()" :disabled="syncingSheets"
-                    class="text-xs h-7 px-3 rounded-lg btn-ghost flex items-center gap-1.5"
-                    :class="syncingSheets ? 'opacity-60 cursor-wait' : ''">
-              <span :class="syncingSheets ? 'spin-slow' : ''">⇄</span> Sync Sheets
-            </button>
-          </div>
-        </div>
-
-        <!-- Recent videos (last 4) -->
-        <div>
+        <!-- ── RECENT VIDEOS ────────────────────────────────────────── -->
+        <div class="glass rounded-2xl p-5 mb-4">
           <div class="flex items-center justify-between mb-4">
-            <h3 class="text-sm font-semibold" style="color: var(--text-2);">Recent Videos</h3>
-            <button @click="navTo('videos')" class="text-xs btn-ghost h-7 px-3 rounded-lg">View all →</button>
+            <div class="text-sm font-bold" style="color:var(--text-1);">Recent Videos</div>
+            <div class="flex gap-2">
+              <button @click="syncAllSheets()" :disabled="syncingSheets"
+                      class="text-xs btn-ghost h-7 px-3 rounded-lg flex items-center gap-1.5">
+                <span :class="syncingSheets?'spin-slow':''">⇄</span> Sheets
+              </button>
+              <button @click="navTo('videos')" class="text-xs btn-ghost h-7 px-3 rounded-lg">
+                View all →
+              </button>
+            </div>
           </div>
-          <div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(260px,1fr));">
-            <template x-for="vid in videos.slice(0,4)" :key="vid.slug">
-              <div class="video-card p-4">
-                <!-- Thumbnail strip -->
-              <div class="w-full h-24 relative overflow-hidden rounded-lg mb-3"
-                   style="background: rgba(255,255,255,0.03);">
-                <template x-if="vid.thumbnail_url">
-                  <img :src="vid.thumbnail_url" class="w-full h-full object-cover absolute inset-0"
-                       @error="$el.style.display='none'" alt="">
-                </template>
-                <div class="absolute inset-0 flex items-center justify-center text-2xl"
-                     :style="vid.thumbnail_url ? 'opacity:0' : 'opacity:1'" style="color: var(--text-4);">🎬</div>
-              </div>
-              <div class="text-xs font-semibold mb-1 truncate" style="color: var(--text-1);" x-text="vid.keyword"></div>
-                <div class="flex items-center gap-2 mt-2 flex-wrap">
-                  <template x-if="vid.video_id">
-                    <a :href="'https://youtube.com/watch?v=' + vid.video_id" target="_blank"
-                       class="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 hover:underline">▶ YouTube</a>
-                  </template>
-                  <template x-if="!vid.video_id && tokenOk">
-                    <button @click="uploadVideo(vid.slug)" :disabled="uploadingSlug === vid.slug"
-                            class="text-xs px-2 py-0.5 rounded-full btn-primary">
-                      <span x-text="uploadingSlug===vid.slug ? '↑ …' : '↑ Upload'"></span>
-                    </button>
-                  </template>
+
+          <!-- Has analytics videos (with real stats) -->
+          <template x-if="(analytics?.videos||[]).length > 0">
+            <div class="space-y-2">
+              <template x-for="vid in (analytics.videos||[]).slice(0,5)" :key="vid.id">
+                <div class="vid-row">
+                  <!-- Thumb -->
+                  <div class="w-14 h-9 rounded-lg overflow-hidden flex-shrink-0"
+                       style="background:rgba(255,255,255,0.04);">
+                    <template x-if="vid.thumbnail">
+                      <img :src="vid.thumbnail" class="w-full h-full object-cover" alt="">
+                    </template>
+                    <template x-if="!vid.thumbnail">
+                      <div class="w-full h-full flex items-center justify-center text-sm"
+                           style="color:var(--text-4);">🎬</div>
+                    </template>
+                  </div>
+                  <!-- Title -->
+                  <div class="flex-1 min-w-0">
+                    <div class="text-xs font-semibold truncate" style="color:var(--text-1);"
+                         x-text="vid.title||vid.slug"></div>
+                    <div class="text-xs mt-0.5" style="color:var(--text-3);"
+                         x-text="(vid.published||'').slice(0,10)"></div>
+                  </div>
+                  <!-- Stats -->
+                  <div class="flex items-center gap-4 flex-shrink-0">
+                    <div class="text-center">
+                      <div class="text-xs font-bold" style="color:var(--text-1);"
+                           x-text="(vid.views||0).toLocaleString()"></div>
+                      <div class="text-xs" style="color:var(--text-3);font-size:10px;">views</div>
+                    </div>
+                    <div class="text-center">
+                      <div class="text-xs font-bold" style="color:#a78bfa;"
+                           x-text="(vid.likes||0).toLocaleString()"></div>
+                      <div class="text-xs" style="color:var(--text-3);font-size:10px;">likes</div>
+                    </div>
+                    <div class="text-center">
+                      <div class="text-xs font-bold" style="color:#38bdf8;"
+                           x-text="(vid.comments||0).toLocaleString()"></div>
+                      <div class="text-xs" style="color:var(--text-3);font-size:10px;">cmts</div>
+                    </div>
+                    <a :href="'https://youtube.com/watch?v='+vid.id" target="_blank"
+                       class="text-xs px-2.5 py-1 rounded-lg flex-shrink-0"
+                       style="background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.2);">
+                      ▶ Watch
+                    </a>
+                  </div>
                 </div>
-              </div>
-            </template>
-            <template x-if="videos.length === 0">
-              <div class="glass rounded-2xl p-8 text-center col-span-full" style="color: var(--text-3);">
+              </template>
+            </div>
+          </template>
+
+          <!-- Fallback: local videos without analytics -->
+          <template x-if="!(analytics?.videos||[]).length">
+            <div class="space-y-2">
+              <template x-for="vid in videos.slice(0,5)" :key="vid.slug">
+                <div class="vid-row">
+                  <div class="w-14 h-9 rounded-lg overflow-hidden flex-shrink-0"
+                       style="background:rgba(255,255,255,0.04);">
+                    <template x-if="vid.thumbnail_url">
+                      <img :src="vid.thumbnail_url" class="w-full h-full object-cover" alt="">
+                    </template>
+                    <template x-if="!vid.thumbnail_url">
+                      <div class="w-full h-full flex items-center justify-center text-sm"
+                           style="color:var(--text-4);">🎬</div>
+                    </template>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-xs font-semibold truncate" style="color:var(--text-1);"
+                         x-text="vid.keyword||vid.slug"></div>
+                    <div class="text-xs mt-0.5 flex items-center gap-2" style="color:var(--text-3);">
+                      <span x-show="vid.stages?.script" style="color:var(--brand-lt);">✓ Script</span>
+                      <span x-show="vid.stages?.voice">✓ Voice</span>
+                      <span x-show="vid.stages?.assemble">✓ Video</span>
+                      <span x-show="vid.video_id" style="color:#10b981;">✓ Live</span>
+                    </div>
+                  </div>
+                  <div class="flex gap-2 flex-shrink-0">
+                    <template x-if="vid.video_id">
+                      <a :href="'https://youtube.com/watch?v='+vid.video_id" target="_blank"
+                         class="text-xs px-2.5 py-1 rounded-lg"
+                         style="background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.2);">
+                        ▶ Watch
+                      </a>
+                    </template>
+                    <template x-if="!vid.video_id && tokenOk">
+                      <button @click="uploadVideo(vid.slug)" :disabled="uploadingSlug===vid.slug"
+                              class="text-xs px-2.5 py-1 rounded-lg btn-primary">
+                        <span x-text="uploadingSlug===vid.slug?'↑…':'↑ Upload'"></span>
+                      </button>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              <div x-show="videos.length===0" class="text-center py-8 text-sm" style="color:var(--text-3);">
                 <div class="text-2xl mb-2">🎬</div>
-                <div class="text-sm">No videos yet — run the pipeline to get started.</div>
+                No videos yet — run the pipeline to get started.
               </div>
-            </template>
-          </div>
+            </div>
+          </template>
         </div>
 
-        <!-- System info bar -->
-        <div x-show="sysInfo" class="glass rounded-2xl p-4 mt-6 flex flex-wrap items-center gap-5">
-          <div class="flex items-center gap-2">
-            <span class="text-lg">💾</span>
-            <div>
-              <div class="text-xs font-semibold" style="color: var(--text-2);">Disk Space</div>
-              <div class="text-xs" style="color: var(--text-3);">
-                <span x-text="sysInfo?.disk_free_gb + 'GB free'"></span> /
-                <span x-text="sysInfo?.disk_total_gb + 'GB'"></span>
-              </div>
-            </div>
-          </div>
-          <div class="h-8 w-px" style="background: var(--border);"></div>
-          <div class="flex items-center gap-2">
-            <span class="text-lg">📁</span>
-            <div>
-              <div class="text-xs font-semibold" style="color: var(--text-2);">Output</div>
-              <div class="text-xs" style="color: var(--text-3);">
-                <span x-text="sysInfo?.videos_total + ' videos'"></span>,
-                <span x-text="sysInfo?.videos_uploaded + ' uploaded'"></span>,
-                <span x-text="sysInfo?.shorts_total + ' shorts'"></span>
-              </div>
-            </div>
-          </div>
-          <div class="h-8 w-px" style="background: var(--border);"></div>
-          <div class="flex items-center gap-2">
-            <span class="text-lg">🐍</span>
-            <div>
-              <div class="text-xs font-semibold" style="color: var(--text-2);">Runtime</div>
-              <div class="text-xs" style="color: var(--text-3);">
-                Python <span x-text="sysInfo?.python_version"></span> ·
-                <span x-text="sysInfo?.platform"></span>
-              </div>
-            </div>
+        <!-- ── QUICK ACTIONS + SYSTEM BAR ──────────────────────────── -->
+        <div class="flex items-center gap-3 flex-wrap">
+          <button @click="navTo('pipeline')"
+                  class="btn-primary h-9 px-5 rounded-xl text-xs font-semibold flex items-center gap-2">
+            ▶ Run Pipeline
+          </button>
+          <button @click="navTo('goals'); $nextTick(()=>agentAnalyzeGoals())"
+                  class="h-9 px-4 rounded-xl text-xs font-semibold flex items-center gap-2"
+                  style="background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.25);">
+            🤖 Analyze Channel
+          </button>
+          <button @click="fetchAnalytics()"
+                  class="btn-ghost h-9 px-4 rounded-xl text-xs flex items-center gap-1.5">
+            ↺ Refresh Data
+          </button>
+          <div class="h-6 w-px ml-1" style="background:var(--border);"></div>
+          <div class="flex items-center gap-1.5 text-xs" style="color:var(--text-3);">
+            <span x-text="'Python '+( sysInfo?.python_version||'—')"></span>
+            <span>·</span>
+            <span x-text="(sysInfo?.disk_free_gb||'—')+'GB free'"></span>
           </div>
           <div class="ml-auto">
             <a href="/api/logs/download" download="ytauto.log"
-               class="text-xs h-7 px-3 rounded-lg btn-ghost flex items-center gap-1.5">
-              ↓ Download Logs
+               class="btn-ghost h-7 px-3 rounded-lg text-xs flex items-center gap-1.5">
+              ↓ Logs
             </a>
           </div>
         </div>
@@ -1113,66 +1524,132 @@
           </template>
         </div>
 
-        <!-- Stage progress -->
+        <!-- ── Stage Pipeline Visualizer ───────────────────────────────── -->
         <div class="glass rounded-2xl p-6 mb-6">
-          <div class="flex items-center justify-between mb-5">
-            <div class="flex items-center gap-2">
-              <span class="text-xs font-semibold" style="color: var(--text-2);">Stage Progress</span>
-              <span x-show="currentKeyword" class="text-xs px-2.5 py-0.5 rounded-full truncate max-w-[220px]"
-                    style="background: rgba(99,102,241,0.12); color: var(--brand-lt); border: 1px solid rgba(99,102,241,0.2);"
-                    x-text="currentKeyword"></span>
+
+          <!-- Header row -->
+          <div class="flex items-center justify-between mb-1">
+            <div class="flex items-center gap-3">
+              <span class="text-sm font-bold" style="color:var(--text-1);">Pipeline Stages</span>
+              <span x-show="currentKeyword"
+                    class="text-xs px-2.5 py-0.5 rounded-full max-w-xs truncate"
+                    style="background:rgba(99,102,241,0.12);color:var(--brand-lt);border:1px solid rgba(99,102,241,0.2);"
+                    x-text="'🔑 ' + currentKeyword"></span>
             </div>
-            <div class="flex items-center gap-2 text-xs" style="color: var(--text-3);">
-              <span x-text="completedStages + ' / 8'"></span>
-              <div class="w-24 h-1.5 rounded-full overflow-hidden" style="background: rgba(255,255,255,0.07);">
-                <div class="h-full rounded-full transition-all duration-700"
-                     style="background: linear-gradient(90deg, var(--brand), var(--brand-lt));"
-                     :style="'width:' + stageProgress + '%'"></div>
-              </div>
-              <span class="mono font-semibold" style="color: var(--brand-lt);" x-text="stageProgress + '%'"></span>
+            <div class="flex items-center gap-2 text-xs" style="color:var(--text-3);">
+              <span class="font-bold" style="color:var(--brand-lt);"
+                    x-text="completedStages + ' / 8 stages'"></span>
             </div>
           </div>
 
-          <!-- Stepper -->
-          <div class="grid gap-3" style="grid-template-columns: repeat(8, 1fr);">
-            <template x-for="(state, name) in stages" :key="name">
-              <div class="flex flex-col items-center gap-1.5 relative">
-                <!-- Connector line (between nodes) -->
-                <div x-show="name !== 'upload'"
-                     class="absolute top-4 left-1/2 w-full h-0.5 z-0"
-                     style="left: 50%; right: -50%;"
-                     :style="state === 'done' ? 'background: var(--green)' : 'background: rgba(255,255,255,0.07)'"></div>
+          <!-- Master progress bar -->
+          <div class="h-1.5 rounded-full overflow-hidden mb-5" style="background:rgba(255,255,255,0.06);">
+            <div class="h-full rounded-full transition-all duration-700"
+                 style="background:linear-gradient(90deg,#6366f1,#a78bfa,#10b981);"
+                 :style="'width:' + stageProgress + '%'"></div>
+          </div>
 
-                <!-- Node circle -->
-                <div class="w-8 h-8 rounded-full flex items-center justify-center z-10 text-sm transition-all duration-300 relative"
-                     :class="{
-                       'bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)]': state === 'pending',
-                       'border-2 border-indigo-400': state === 'running',
-                       'border-2 border-emerald-400': state === 'done',
-                       'border-2 border-red-400': state === 'error',
-                     }"
-                     :style="state === 'running' ? 'background: rgba(99,102,241,0.15); box-shadow: 0 0 0 4px rgba(99,102,241,0.15)' : state === 'done' ? 'background: rgba(16,185,129,0.12)' : state === 'error' ? 'background: rgba(239,68,68,0.1)' : ''">
-                  <span x-show="state==='pending'" style="color: var(--text-4); font-size: 10px;">●</span>
-                  <span x-show="state==='running'" class="spin-slow" style="color: var(--brand-lt); font-size: 12px;">◎</span>
-                  <span x-show="state==='done'" style="color: var(--green); font-size: 13px; font-weight: 700;">✓</span>
-                  <span x-show="state==='error'" style="color: var(--red); font-size: 13px; font-weight: 700;">✗</span>
+          <!-- Stage cards — 4 per row -->
+          <div class="grid gap-3" style="grid-template-columns:repeat(4,1fr);">
+            <template x-for="([name, state], idx) in Object.entries(stages)" :key="name">
+              <div class="relative rounded-2xl p-4 transition-all duration-300 select-none"
+                   :style="
+                     state === 'done'    ? 'background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);' :
+                     state === 'running' ? 'background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.45);box-shadow:0 0 24px rgba(99,102,241,0.2);' :
+                     state === 'error'   ? 'background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);' :
+                                           'background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);'
+                   ">
+
+                <!-- Running pulse ring -->
+                <div x-show="state === 'running'"
+                     class="absolute inset-0 rounded-2xl pointer-events-none"
+                     style="animation:pipelinePulse 2s ease-in-out infinite;border:1px solid rgba(99,102,241,0.5);"></div>
+
+                <!-- Stage number badge -->
+                <div class="absolute top-3 right-3 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold"
+                     :style="
+                       state === 'done'    ? 'background:rgba(16,185,129,0.2);color:#10b981;' :
+                       state === 'running' ? 'background:rgba(99,102,241,0.3);color:#a78bfa;' :
+                       state === 'error'   ? 'background:rgba(239,68,68,0.2);color:#ef4444;' :
+                                             'background:rgba(255,255,255,0.06);color:var(--text-4);'
+                     "
+                     x-text="idx + 1"></div>
+
+                <!-- Icon -->
+                <div class="text-2xl mb-2.5 leading-none" x-text="
+                  name==='research'  ? '🔍' :
+                  name==='script'    ? '✍️' :
+                  name==='voice'     ? '🎙' :
+                  name==='visuals'   ? '🎬' :
+                  name==='assemble'  ? '⚡' :
+                  name==='seo'       ? '📊' :
+                  name==='thumbnail' ? '🖼' : '🚀'
+                "></div>
+
+                <!-- Stage name -->
+                <div class="text-xs font-bold mb-0.5"
+                     :style="
+                       state === 'done'    ? 'color:#10b981;' :
+                       state === 'running' ? 'color:#a78bfa;' :
+                       state === 'error'   ? 'color:#ef4444;' :
+                                             'color:var(--text-3);'
+                     "
+                     x-text="STAGE_LABELS[name] || name"></div>
+
+                <!-- Stage description -->
+                <div class="text-xs leading-tight" style="color:var(--text-4);" x-text="
+                  name==='research'  ? 'Trending keywords' :
+                  name==='script'    ? 'AI script generation' :
+                  name==='voice'     ? 'TTS narration' :
+                  name==='visuals'   ? 'Stock footage' :
+                  name==='assemble'  ? 'Video rendering' :
+                  name==='seo'       ? 'Title & metadata' :
+                  name==='thumbnail' ? 'Thumbnail image' : 'YouTube upload'
+                "></div>
+
+                <!-- Status indicator -->
+                <div class="mt-3 flex items-center gap-1.5">
+                  <!-- pending -->
+                  <template x-if="state === 'pending'">
+                    <div class="flex items-center gap-1 text-xs" style="color:var(--text-4);">
+                      <span class="w-1.5 h-1.5 rounded-full inline-block" style="background:rgba(255,255,255,0.12);"></span>
+                      <span>Waiting</span>
+                    </div>
+                  </template>
+                  <!-- running -->
+                  <template x-if="state === 'running'">
+                    <div class="flex items-center gap-1.5 text-xs" style="color:#a78bfa;">
+                      <span class="spin-slow inline-block" style="font-size:10px;">◎</span>
+                      <span class="font-semibold" style="animation:pipelineTextPulse 1.2s ease-in-out infinite;">Processing…</span>
+                    </div>
+                  </template>
+                  <!-- done -->
+                  <template x-if="state === 'done'">
+                    <div class="flex items-center gap-1 text-xs" style="color:#10b981;">
+                      <span class="font-bold">✓</span>
+                      <span class="font-semibold">Complete</span>
+                    </div>
+                  </template>
+                  <!-- error -->
+                  <template x-if="state === 'error'">
+                    <div class="flex items-center gap-1 text-xs" style="color:#ef4444;">
+                      <span class="font-bold">✗</span>
+                      <span class="font-semibold">Failed</span>
+                    </div>
+                  </template>
                 </div>
 
-                <!-- Label -->
-                <div class="text-center" style="min-height: 28px;">
-                  <div class="text-xs font-medium leading-tight"
-                       :style="state === 'running' ? 'color: var(--brand-lt)' : state === 'done' ? 'color: var(--green)' : state === 'error' ? 'color: var(--red)' : 'color: var(--text-4)'"
-                       x-text="STAGE_LABELS[name] || name"></div>
-                  <div x-show="state === 'running'"
-                       class="text-xs mt-0.5 pulse-dot"
-                       style="color: var(--brand-lt); font-size: 9px;">running</div>
-                  <div x-show="state === 'done'"
-                       class="text-xs mt-0.5"
-                       style="color: rgba(16,185,129,0.6); font-size: 9px;">done</div>
-                </div>
               </div>
             </template>
           </div>
+
+          <!-- Row connector arrows between card rows -->
+          <div x-show="Object.keys(stages).length > 4" class="flex justify-around px-2 -my-0.5 pointer-events-none">
+            <template x-for="i in 4" :key="i">
+              <div class="w-px h-3" style="background:rgba(255,255,255,0.08);"></div>
+            </template>
+          </div>
+
         </div>
 
         <!-- Log terminal -->
@@ -1957,7 +2434,9 @@
       </div>
 
       <!-- ══════════════════════ SHORTS ══════════════════════ -->
-      <div x-show="activeSection==='shorts'" class="slide-in">
+      <div x-show="activeSection==='shorts'" class="slide-in"
+           x-init="$watch('activeSection', v => { if(v==='shorts' && !shortsAnalytics) loadShortsAnalytics() })"
+      >
         <div class="section-header">
           <div class="section-icon">⚡</div>
           <h2>YouTube Shorts</h2>
@@ -2076,6 +2555,26 @@
                       ↺ Remake
                     </button>
                   </template>
+                  <!-- TikTok -->
+                  <template x-if="vid.has_video && socialStatus.tiktok?.connected">
+                    <button @click="postToTikTok(vid.slug)"
+                            :disabled="socialPosting[vid.slug+'_tt']"
+                            class="text-xs h-7 px-3 rounded-lg btn-ghost flex items-center gap-1"
+                            :class="socialPosting[vid.slug+'_tt']?'opacity-60 cursor-wait':''">
+                      <span :class="socialPosting[vid.slug+'_tt']?'spin-slow':''">TT</span>
+                      <span x-text="socialPosting[vid.slug+'_tt']?'…':'TikTok'"></span>
+                    </button>
+                  </template>
+                  <!-- Facebook -->
+                  <template x-if="vid.has_video && socialStatus.facebook?.connected">
+                    <button @click="postToFacebook(vid.slug)"
+                            :disabled="socialPosting[vid.slug+'_fb']"
+                            class="text-xs h-7 px-3 rounded-lg btn-ghost flex items-center gap-1"
+                            :class="socialPosting[vid.slug+'_fb']?'opacity-60 cursor-wait':''">
+                      <span :class="socialPosting[vid.slug+'_fb']?'spin-slow':''">f</span>
+                      <span x-text="socialPosting[vid.slug+'_fb']?'…':'Facebook'"></span>
+                    </button>
+                  </template>
                 </div>
               </div>
             </div>
@@ -2087,6 +2586,112 @@
               <div class="text-sm font-medium mb-1" style="color: var(--text-2);">No videos yet</div>
               <div class="text-xs mb-4" style="color: var(--text-3);">Run the pipeline to generate videos, then create Shorts from them.</div>
               <button @click="navTo('pipeline')" class="btn-primary h-9 px-5 rounded-xl text-sm">▶ Go to Pipeline</button>
+            </div>
+          </template>
+        </div>
+
+        <!-- ── Shorts Analytics ─────────────────────────────── -->
+        <div class="glass rounded-2xl p-5 mt-6">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+              <span style="font-size:1.1rem;">📊</span>
+              <span class="text-sm font-semibold" style="color:var(--text-1);">Shorts Analytics</span>
+              <span x-show="loadingShortsAnalytics" class="spin-slow text-xs" style="color:var(--brand-lt);">◉</span>
+            </div>
+            <button @click="loadShortsAnalytics()"
+                    :disabled="loadingShortsAnalytics"
+                    class="h-7 px-3 rounded-lg text-xs btn-ghost flex items-center gap-1.5"
+                    :class="loadingShortsAnalytics?'opacity-60 cursor-wait':''">
+              ↺ Refresh
+            </button>
+          </div>
+
+          <!-- No shorts uploaded yet -->
+          <template x-if="!loadingShortsAnalytics && shortsAnalytics && shortsAnalytics.length === 0">
+            <div class="text-center py-8">
+              <div class="text-3xl mb-2">📈</div>
+              <div class="text-sm" style="color:var(--text-3);">Upload Shorts to YouTube to see analytics here.</div>
+            </div>
+          </template>
+
+          <!-- Error state -->
+          <template x-if="!loadingShortsAnalytics && shortsAnalytics === null">
+            <div class="text-center py-6">
+              <div class="text-xs" style="color:var(--text-4);">Click Refresh to load analytics from YouTube.</div>
+            </div>
+          </template>
+
+          <!-- Summary KPI row -->
+          <template x-if="shortsAnalyticsSummary && shortsAnalytics && shortsAnalytics.length > 0">
+            <div>
+              <div class="grid gap-3 mb-5" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));">
+                <div class="rounded-xl p-3 text-center" style="background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.2);">
+                  <div class="text-xs mb-1" style="color:var(--text-3);">Total Views</div>
+                  <div class="font-bold mono text-lg" style="color:#818cf8;" x-text="(shortsAnalyticsSummary.total_views||0).toLocaleString()"></div>
+                </div>
+                <div class="rounded-xl p-3 text-center" style="background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.2);">
+                  <div class="text-xs mb-1" style="color:var(--text-3);">Total Likes</div>
+                  <div class="font-bold mono text-lg" style="color:#34d399;" x-text="(shortsAnalyticsSummary.total_likes||0).toLocaleString()"></div>
+                </div>
+                <div class="rounded-xl p-3 text-center" style="background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.2);">
+                  <div class="text-xs mb-1" style="color:var(--text-3);">Avg Engagement</div>
+                  <div class="font-bold mono text-lg" style="color:#fbbf24;" x-text="(shortsAnalyticsSummary.avg_engagement||0).toFixed(1)+'%'"></div>
+                </div>
+                <div class="rounded-xl p-3 text-center" style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.2);">
+                  <div class="text-xs mb-1" style="color:var(--text-3);">Best Short</div>
+                  <div class="font-bold mono text-sm truncate" style="color:#f87171;" x-text="(shortsAnalyticsSummary.best_views||0).toLocaleString() + ' views'"></div>
+                </div>
+              </div>
+
+              <!-- Per-short table -->
+              <div class="overflow-x-auto rounded-xl" style="border:1px solid var(--border);">
+                <table class="w-full text-xs">
+                  <thead>
+                    <tr style="background:rgba(255,255,255,0.03); border-bottom:1px solid var(--border);">
+                      <th class="text-left p-3 font-medium" style="color:var(--text-3);">Short</th>
+                      <th class="text-right p-3 font-medium" style="color:var(--text-3);">Views</th>
+                      <th class="text-right p-3 font-medium" style="color:var(--text-3);">Likes</th>
+                      <th class="text-right p-3 font-medium" style="color:var(--text-3);">Comments</th>
+                      <th class="text-right p-3 font-medium" style="color:var(--text-3);">Eng%</th>
+                      <th class="text-right p-3 font-medium" style="color:var(--text-3);">Avg View%</th>
+                      <th class="text-right p-3 font-medium" style="color:var(--text-3);">Watch min</th>
+                      <th class="p-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="s in shortsAnalytics" :key="s.short_id">
+                      <tr style="border-bottom:1px solid var(--border);" class="hover:bg-white hover:bg-opacity-5 transition-colors">
+                        <td class="p-3 max-w-xs">
+                          <div class="font-medium truncate" style="color:var(--text-1); max-width:180px;" x-text="s.title || s.slug || s.short_id"></div>
+                          <div class="mono mt-0.5" style="color:var(--text-4);" x-text="s.duration_s ? Math.floor(s.duration_s)+'s' : ''"></div>
+                        </td>
+                        <td class="p-3 text-right mono font-semibold" style="color:#818cf8;" x-text="(s.views||0).toLocaleString()"></td>
+                        <td class="p-3 text-right mono" style="color:#34d399;" x-text="(s.likes||0).toLocaleString()"></td>
+                        <td class="p-3 text-right mono" style="color:var(--text-2);" x-text="(s.comments||0).toLocaleString()"></td>
+                        <td class="p-3 text-right mono" style="color:#fbbf24;" x-text="(s.eng_rate||0).toFixed(1)+'%'"></td>
+                        <td class="p-3 text-right mono" style="color:var(--text-2);">
+                          <span x-show="s.avg_view_pct != null" x-text="(s.avg_view_pct||0).toFixed(0)+'%'"></span>
+                          <span x-show="s.avg_view_pct == null" style="color:var(--text-4);">—</span>
+                        </td>
+                        <td class="p-3 text-right mono" style="color:var(--text-2);">
+                          <span x-show="s.watch_minutes != null" x-text="(s.watch_minutes||0).toLocaleString()"></span>
+                          <span x-show="s.watch_minutes == null" style="color:var(--text-4);">—</span>
+                        </td>
+                        <td class="p-3">
+                          <a :href="s.url" target="_blank"
+                             class="h-6 px-2 rounded-lg inline-flex items-center text-xs"
+                             style="background:rgba(239,68,68,0.12); color:#f87171; border:1px solid rgba(239,68,68,0.2);">
+                            ▶
+                          </a>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div class="text-xs mt-2" style="color:var(--text-4);">
+                Avg View % and Watch minutes require YouTube Analytics API (OAuth). Views/likes use public API.
+              </div>
             </div>
           </template>
         </div>
@@ -2329,6 +2934,76 @@
             </div>
           </div>
 
+          <!-- TikTok -->
+          <div class="glass rounded-2xl p-6">
+            <div class="flex items-start gap-4">
+              <div class="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 font-bold"
+                   style="background:rgba(0,0,0,0.3);color:#fff;">TT</div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1">
+                  <div class="text-sm font-semibold" style="color:var(--text-1);">TikTok</div>
+                  <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+                        :class="socialStatus.tiktok?.connected
+                          ? 'bg-emerald-400/10 text-emerald-400'
+                          : 'bg-red-400/10 text-red-400'"
+                        x-text="socialStatus.tiktok?.connected
+                          ? '✓ '+socialStatus.tiktok.username
+                          : '✗ Not connected'"></span>
+                </div>
+                <div class="text-xs mb-3" style="color:var(--text-3);">
+                  Auto-posts videos (or Shorts if available) to TikTok.
+                  Add <span class="mono" style="color:var(--brand-lt);">TIKTOK_ACCESS_TOKEN</span> to your <span class="mono">.env</span> file.
+                </div>
+                <div class="flex gap-2 flex-wrap">
+                  <button @click="checkSocialStatus()" class="h-8 px-3 rounded-xl text-xs btn-ghost">
+                    ↺ Check Status
+                  </button>
+                  <button @click="postTikTokAll()" :disabled="!socialStatus.tiktok?.connected || ttPosting"
+                          class="h-8 px-3 rounded-xl text-xs btn-ghost flex items-center gap-1.5"
+                          :class="!socialStatus.tiktok?.connected?'opacity-40 cursor-not-allowed':''">
+                    <span :class="ttPosting?'spin-slow':''">⬆</span>
+                    <span x-text="ttPosting?'Posting…':'Post All to TikTok'"></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Facebook -->
+          <div class="glass rounded-2xl p-6">
+            <div class="flex items-start gap-4">
+              <div class="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                   style="background:rgba(24,119,242,0.15);color:#1877f2;font-weight:bold;">f</div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1">
+                  <div class="text-sm font-semibold" style="color:var(--text-1);">Facebook Page</div>
+                  <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+                        :class="socialStatus.facebook?.connected
+                          ? 'bg-emerald-400/10 text-emerald-400'
+                          : 'bg-red-400/10 text-red-400'"
+                        x-text="socialStatus.facebook?.connected
+                          ? '✓ '+socialStatus.facebook.page_name
+                          : '✗ Not connected'"></span>
+                </div>
+                <div class="text-xs mb-3" style="color:var(--text-3);">
+                  Posts videos to your Facebook Page with SEO title, description and hashtags.
+                  Add <span class="mono" style="color:var(--brand-lt);">FB_PAGE_ACCESS_TOKEN</span> and <span class="mono" style="color:var(--brand-lt);">FB_PAGE_ID</span> to <span class="mono">.env</span>.
+                </div>
+                <div class="flex gap-2 flex-wrap">
+                  <button @click="checkSocialStatus()" class="h-8 px-3 rounded-xl text-xs btn-ghost">
+                    ↺ Check Status
+                  </button>
+                  <button @click="postFacebookAll()" :disabled="!socialStatus.facebook?.connected || fbPosting"
+                          class="h-8 px-3 rounded-xl text-xs btn-ghost flex items-center gap-1.5"
+                          :class="!socialStatus.facebook?.connected?'opacity-40 cursor-not-allowed':''">
+                    <span :class="fbPosting?'spin-slow':''">⬆</span>
+                    <span x-text="fbPosting?'Posting…':'Post All to Facebook'"></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -2445,6 +3120,1310 @@
       </div>
 
       <!-- ══════════════════════ SETTINGS ══════════════════════ -->
+      <!-- ═══════════════════════════════════════════════════════ COSTS SECTION -->
+      <div x-show="activeSection==='costs'" class="slide-in">
+
+        <div class="section-header">
+          <div class="section-icon" style="background: linear-gradient(135deg,#10b981,#059669);">💰</div>
+          <div>
+            <h2>API Cost Analysis</h2>
+            <p class="text-xs mt-0.5" style="color:var(--text-3);">Track Anthropic API spend per video, per stage, over time</p>
+          </div>
+          <div class="ml-auto flex gap-2">
+            <button @click="backfillCosts()" :disabled="costBackfilling"
+                    class="h-8 px-4 rounded-xl text-xs flex items-center gap-1.5"
+                    style="background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);"
+                    title="Estimate costs for existing videos that have no API log">
+              <span x-show="!costBackfilling">⚡ Backfill History</span>
+              <span x-show="costBackfilling" class="flex items-center gap-1.5"><span class="spin-slow">◉</span> Backfilling…</span>
+            </button>
+            <button @click="loadCosts()" :disabled="costLoading"
+                    class="h-8 px-4 rounded-xl text-xs btn-ghost flex items-center gap-1.5">
+              <span x-show="!costLoading">↺ Refresh</span>
+              <span x-show="costLoading" class="spin-slow">◉</span>
+            </button>
+            <a href="/api/costs/history" download="cost_log.json"
+               class="h-8 px-4 rounded-xl text-xs btn-ghost flex items-center gap-1.5">⬇ Export JSON</a>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex gap-1 p-1 rounded-xl mb-5" style="background:rgba(255,255,255,0.04);">
+          <button @click="costTab='overview'"
+                  class="flex-1 py-1.5 rounded-lg text-xs font-medium transition"
+                  :style="costTab==='overview' ? 'background:var(--brand);color:white;' : 'color:var(--text-3);'">Overview</button>
+          <button @click="costTab='pervideo'; loadCostPerVideo()"
+                  class="flex-1 py-1.5 rounded-lg text-xs font-medium transition"
+                  :style="costTab==='pervideo' ? 'background:var(--brand);color:white;' : 'color:var(--text-3);'">Per Video</button>
+          <button @click="costTab='trends'; loadCostDaily()"
+                  class="flex-1 py-1.5 rounded-lg text-xs font-medium transition"
+                  :style="costTab==='trends' ? 'background:var(--brand);color:white;' : 'color:var(--text-3);'">Trends</button>
+          <button @click="costTab='budget'"
+                  class="flex-1 py-1.5 rounded-lg text-xs font-medium transition"
+                  :style="costTab==='budget' ? 'background:var(--brand);color:white;' : 'color:var(--text-3);'">Budget & ROI</button>
+        </div>
+
+        <!-- ── Overview Tab ── -->
+        <div x-show="costTab==='overview'">
+          <!-- KPI cards -->
+          <div class="grid grid-cols-2 gap-3 mb-5" style="grid-template-columns: repeat(auto-fill,minmax(170px,1fr));">
+            <div class="glass rounded-2xl p-4">
+              <div class="text-xs mb-1" style="color:var(--text-3);">Total Spend</div>
+              <div class="text-2xl font-bold" style="color:var(--brand);"
+                   x-text="'$'+(costSummary.total_cost_usd||0).toFixed(4)"></div>
+              <div class="text-xs mt-1" style="color:var(--text-3);"
+                   x-text="(costSummary.total_calls||0)+' API calls'"></div>
+            </div>
+            <div class="glass rounded-2xl p-4">
+              <div class="text-xs mb-1" style="color:var(--text-3);">This Month</div>
+              <div class="text-2xl font-bold" style="color:#10b981;"
+                   x-text="'$'+(costSummary.this_month_cost_usd||0).toFixed(4)"></div>
+              <div class="text-xs mt-1" style="color:var(--text-3);">vs budget
+                <span x-text="'$'+(costBudget||50)"></span>/mo</div>
+            </div>
+            <div class="glass rounded-2xl p-4">
+              <div class="text-xs mb-1" style="color:var(--text-3);">This Week</div>
+              <div class="text-2xl font-bold" style="color:#f59e0b;"
+                   x-text="'$'+(costSummary.this_week_cost_usd||0).toFixed(4)"></div>
+              <div class="text-xs mt-1" style="color:var(--text-3);">last 7 days</div>
+            </div>
+            <div class="glass rounded-2xl p-4">
+              <div class="text-xs mb-1" style="color:var(--text-3);">Avg / Video</div>
+              <div class="text-2xl font-bold"
+                   x-text="'$'+(costSummary.avg_cost_per_video||0).toFixed(4)"></div>
+              <div class="text-xs mt-1" style="color:var(--text-3);"
+                   x-text="(costSummary.unique_videos||0)+' videos tracked'"></div>
+            </div>
+            <div class="glass rounded-2xl p-4">
+              <div class="text-xs mb-1" style="color:var(--text-3);">Input Tokens</div>
+              <div class="text-2xl font-bold" style="color:#a78bfa;"
+                   x-text="((costSummary.total_input_tokens||0)/1000).toFixed(1)+'K'"></div>
+              <div class="text-xs mt-1" style="color:var(--text-3);">prompt tokens</div>
+            </div>
+            <div class="glass rounded-2xl p-4">
+              <div class="text-xs mb-1" style="color:var(--text-3);">Output Tokens</div>
+              <div class="text-2xl font-bold" style="color:#f472b6;"
+                   x-text="((costSummary.total_output_tokens||0)/1000).toFixed(1)+'K'"></div>
+              <div class="text-xs mt-1" style="color:var(--text-3);">completion tokens</div>
+            </div>
+          </div>
+
+          <!-- Estimated data notice -->
+          <div x-show="costHasEstimated"
+               class="mb-4 px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs"
+               style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);color:#f59e0b;">
+            <span>⚡</span>
+            <span>Some entries are <strong>estimated</strong> (backfilled from file sizes — ±15% accuracy). Future runs log exact token counts automatically.</span>
+          </div>
+          <!-- No data prompt -->
+          <div x-show="!costSummary.total_calls"
+               class="mb-4 px-4 py-3 rounded-xl flex items-center justify-between text-xs"
+               style="background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.2);color:var(--brand-lt);">
+            <span>No cost data yet. Click <strong>⚡ Backfill History</strong> to estimate costs from your 14 existing videos.</span>
+            <button @click="backfillCosts()" class="ml-3 px-3 py-1.5 rounded-lg font-semibold"
+                    style="background:rgba(99,102,241,0.2);color:#a78bfa;">
+              Backfill Now
+            </button>
+          </div>
+
+          <!-- Cost by Stage -->
+          <div class="glass rounded-2xl p-5 mb-4">
+            <div class="text-sm font-semibold mb-4" style="color:var(--text-1);">Cost by Stage</div>
+            <div class="space-y-3">
+              <template x-for="[stage, cost] in Object.entries(costSummary.by_stage||{})" :key="stage">
+                <div>
+                  <div class="flex justify-between text-xs mb-1" style="color:var(--text-2);">
+                    <span class="capitalize font-medium" x-text="stage"></span>
+                    <span x-text="'$'+cost.toFixed(4)"></span>
+                  </div>
+                  <div class="h-2 rounded-full overflow-hidden" style="background:rgba(255,255,255,0.06);">
+                    <div class="h-full rounded-full transition-all duration-700"
+                         style="background:linear-gradient(90deg,var(--brand),#a78bfa);"
+                         :style="`width:${costSummary.total_cost_usd > 0 ? Math.min(100, cost/costSummary.total_cost_usd*100) : 0}%`">
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <div x-show="!Object.keys(costSummary.by_stage||{}).length"
+                   class="text-xs text-center py-4" style="color:var(--text-3);">
+                No cost data yet — run the pipeline to start tracking.
+              </div>
+            </div>
+          </div>
+
+          <!-- Model breakdown -->
+          <div class="glass rounded-2xl p-5">
+            <div class="text-sm font-semibold mb-3" style="color:var(--text-1);">Cost by Model</div>
+            <div class="space-y-2">
+              <template x-for="[model, cost] in Object.entries(costSummary.by_model||{})" :key="model">
+                <div class="flex items-center justify-between text-xs py-1.5"
+                     style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                  <span class="font-mono text-xs" style="color:var(--text-2);" x-text="model"></span>
+                  <span class="font-bold" style="color:var(--brand);" x-text="'$'+cost.toFixed(4)"></span>
+                </div>
+              </template>
+              <div x-show="!Object.keys(costSummary.by_model||{}).length"
+                   class="text-xs text-center py-3" style="color:var(--text-3);">No data yet</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Per Video Tab ── -->
+        <div x-show="costTab==='pervideo'">
+          <div class="glass rounded-2xl overflow-hidden">
+            <div class="px-5 py-3 flex items-center justify-between"
+                 style="border-bottom:1px solid rgba(255,255,255,0.06);">
+              <span class="text-sm font-semibold" style="color:var(--text-1);">Cost Per Video</span>
+              <span class="text-xs" style="color:var(--text-3);"
+                    x-text="(costPerVideo.length||0)+' videos tracked'"></span>
+            </div>
+            <div x-show="costPerVideoLoading" class="flex items-center justify-center py-10">
+              <span class="spin-slow text-2xl">◉</span>
+            </div>
+            <div x-show="!costPerVideoLoading && costPerVideo.length === 0"
+                 class="text-center py-10 text-sm" style="color:var(--text-3);">
+              No cost data yet. Run the pipeline to start tracking.
+            </div>
+            <table x-show="!costPerVideoLoading && costPerVideo.length > 0"
+                   class="w-full text-xs">
+              <thead>
+                <tr style="background:rgba(255,255,255,0.03); color:var(--text-3);">
+                  <th class="px-4 py-2.5 text-left font-medium">Keyword</th>
+                  <th class="px-4 py-2.5 text-right font-medium">Script</th>
+                  <th class="px-4 py-2.5 text-right font-medium">SEO</th>
+                  <th class="px-4 py-2.5 text-right font-medium">Other</th>
+                  <th class="px-4 py-2.5 text-right font-medium">Total</th>
+                  <th class="px-4 py-2.5 text-right font-medium">Calls</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="v in costPerVideo" :key="v.slug">
+                  <tr style="border-top:1px solid rgba(255,255,255,0.04);"
+                      class="hover:bg-white/5 transition">
+                    <td class="px-4 py-2.5 font-medium" style="color:var(--text-1);"
+                        x-text="(v.keyword||v.slug).replace(/_/g,' ').slice(0,40)"></td>
+                    <td class="px-4 py-2.5 text-right font-mono" style="color:#a78bfa;"
+                        x-text="'$'+(v.by_stage.script||0).toFixed(4)"></td>
+                    <td class="px-4 py-2.5 text-right font-mono" style="color:#f472b6;"
+                        x-text="'$'+(v.by_stage.seo||0).toFixed(4)"></td>
+                    <td class="px-4 py-2.5 text-right font-mono" style="color:var(--text-3);"
+                        x-text="'$'+Object.entries(v.by_stage).filter(([k])=>k!=='script'&&k!=='seo').reduce((a,[,c])=>a+c,0).toFixed(4)"></td>
+                    <td class="px-4 py-2.5 text-right" style="color:var(--brand);">
+                      <span class="font-bold" x-text="'$'+v.total.toFixed(4)"></span>
+                      <span x-show="v.estimated"
+                            class="ml-1 text-xs px-1.5 py-0.5 rounded"
+                            style="background:rgba(245,158,11,0.12);color:#f59e0b;font-size:9px;">est</span>
+                    </td>
+                    <td class="px-4 py-2.5 text-right" style="color:var(--text-3);"
+                        x-text="v.calls"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Trends Tab ── -->
+        <div x-show="costTab==='trends'">
+          <div class="glass rounded-2xl p-5 mb-4">
+            <div class="text-sm font-semibold mb-4" style="color:var(--text-1);">30-Day Spending</div>
+            <div x-show="costDaily.length === 0" class="text-center py-8 text-sm" style="color:var(--text-3);">
+              No trend data yet. Costs appear here after the first pipeline run.
+            </div>
+            <!-- SVG bar chart -->
+            <template x-if="costDaily.length > 0">
+              <div>
+                <svg width="100%" height="120" style="overflow:visible;">
+                  <template x-for="(d, i) in costDaily" :key="d.date">
+                    <g>
+                      <rect
+                        :x="`${(i / costDaily.length) * 100}%`"
+                        :y="`${120 - (costDailyMax > 0 ? (d.cost_usd / costDailyMax) * 100 : 0)}px`"
+                        :width="`${(1 / costDaily.length) * 96}%`"
+                        :height="`${costDailyMax > 0 ? (d.cost_usd / costDailyMax) * 100 : 0}px`"
+                        rx="2"
+                        :fill="d.cost_usd > 0 ? 'url(#costGrad)' : 'rgba(255,255,255,0.05)'"
+                      />
+                    </g>
+                  </template>
+                  <defs>
+                    <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stop-color="#10b981"/>
+                      <stop offset="100%" stop-color="#059669" stop-opacity="0.6"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <!-- X-axis labels: first, mid, last -->
+                <div class="flex justify-between text-xs mt-1" style="color:var(--text-3);">
+                  <span x-text="costDaily[0]?.date?.slice(5)||''"></span>
+                  <span x-text="costDaily[Math.floor(costDaily.length/2)]?.date?.slice(5)||''"></span>
+                  <span x-text="costDaily[costDaily.length-1]?.date?.slice(5)||''"></span>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Daily cost table (last 10 days with activity) -->
+          <div class="glass rounded-2xl overflow-hidden">
+            <div class="px-5 py-3 text-sm font-semibold" style="border-bottom:1px solid rgba(255,255,255,0.06);color:var(--text-1);">
+              Daily Breakdown
+            </div>
+            <div class="max-h-64 overflow-y-auto">
+              <template x-for="d in [...costDaily].reverse().filter(x=>x.cost_usd>0).slice(0,20)" :key="d.date">
+                <div class="flex items-center justify-between px-5 py-2.5 text-xs"
+                     style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                  <span style="color:var(--text-2);" x-text="d.date"></span>
+                  <span class="font-bold" style="color:var(--brand);"
+                        x-text="'$'+d.cost_usd.toFixed(4)"></span>
+                </div>
+              </template>
+              <div x-show="costDaily.filter(x=>x.cost_usd>0).length===0"
+                   class="text-center py-6 text-xs" style="color:var(--text-3);">No activity yet</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Budget & ROI Tab ── -->
+        <div x-show="costTab==='budget'">
+          <!-- Budget setting -->
+          <div class="glass rounded-2xl p-5 mb-4">
+            <div class="text-sm font-semibold mb-4" style="color:var(--text-1);">Monthly Budget</div>
+            <div class="flex items-center gap-4 mb-4">
+              <div class="flex-1">
+                <label class="text-xs font-medium mb-1 block" style="color:var(--text-2);">Budget (USD/month)</label>
+                <input type="number" x-model.number="costBudget" min="1" step="1"
+                       class="w-full rounded-xl px-3 py-2 text-sm"
+                       style="background:rgba(255,255,255,0.07);border:1px solid var(--border);color:var(--text-1);">
+              </div>
+              <button @click="saveCostBudget()" class="btn-primary h-10 px-5 rounded-xl text-sm font-semibold mt-5">
+                Save Budget
+              </button>
+            </div>
+            <!-- Budget gauge -->
+            <div>
+              <div class="flex justify-between text-xs mb-1" style="color:var(--text-2);">
+                <span>Month-to-date: <strong x-text="'$'+(costSummary.this_month_cost_usd||0).toFixed(4)"></strong></span>
+                <span>Budget: <strong x-text="'$'+(costBudget||50).toFixed(2)"></strong></span>
+              </div>
+              <div class="h-3 rounded-full overflow-hidden" style="background:rgba(255,255,255,0.06);">
+                <div class="h-full rounded-full transition-all duration-700"
+                     :style="`width:${Math.min(100,(costSummary.this_month_cost_usd||0)/(costBudget||50)*100)}%;
+                               background:${((costSummary.this_month_cost_usd||0)/(costBudget||50))>0.8?'#ef4444':((costSummary.this_month_cost_usd||0)/(costBudget||50))>0.5?'#f59e0b':'#10b981'}`">
+                </div>
+              </div>
+              <div class="text-xs mt-1.5 text-right" style="color:var(--text-3);"
+                   x-text="((costSummary.this_month_cost_usd||0)/(costBudget||50)*100).toFixed(1)+'% of budget used'">
+              </div>
+            </div>
+            <!-- Projection -->
+            <div class="mt-4 p-3 rounded-xl text-xs" style="background:rgba(255,255,255,0.04);">
+              <div class="font-medium mb-1" style="color:var(--text-2);">Month-end projection</div>
+              <div style="color:var(--text-3);">
+                Based on daily average:
+                <strong style="color:var(--text-1);"
+                  x-text="'$'+((costSummary.this_month_cost_usd||0) / Math.max(1, new Date().getDate()) * new Date(new Date().getFullYear(), new Date().getMonth()+1, 0).getDate()).toFixed(2)"></strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- ROI Analysis -->
+          <div class="glass rounded-2xl p-5 mb-4">
+            <div class="text-sm font-semibold mb-4" style="color:var(--text-1);">ROI Analysis</div>
+            <div class="grid grid-cols-2 gap-3" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));">
+              <div class="p-3 rounded-xl" style="background:rgba(255,255,255,0.04);">
+                <div class="text-xs mb-1" style="color:var(--text-3);">Cost / View</div>
+                <div class="text-lg font-bold" style="color:var(--brand);"
+                     x-text="costRoiCostPerView !== null ? '$'+costRoiCostPerView.toFixed(5) : '—'"></div>
+                <div class="text-xs" style="color:var(--text-3);">across all videos</div>
+              </div>
+              <div class="p-3 rounded-xl" style="background:rgba(255,255,255,0.04);">
+                <div class="text-xs mb-1" style="color:var(--text-3);">Total Views</div>
+                <div class="text-lg font-bold"
+                     x-text="costRoiTotalViews !== null ? costRoiTotalViews.toLocaleString() : '—'"></div>
+                <div class="text-xs" style="color:var(--text-3);">from YouTube API</div>
+              </div>
+              <div class="p-3 rounded-xl" style="background:rgba(255,255,255,0.04);">
+                <div class="text-xs mb-1" style="color:var(--text-3);">Est. Revenue</div>
+                <div class="text-lg font-bold" style="color:#10b981;"
+                     x-text="costRoiEstRevenue !== null ? '$'+costRoiEstRevenue.toFixed(2) : '—'"></div>
+                <div class="text-xs" style="color:var(--text-3);">@$3 CPM estimate</div>
+              </div>
+              <div class="p-3 rounded-xl" style="background:rgba(255,255,255,0.04);">
+                <div class="text-xs mb-1" style="color:var(--text-3);">ROI Ratio</div>
+                <div class="text-lg font-bold"
+                     :style="costRoiRatio !== null && costRoiRatio >= 1 ? 'color:#10b981' : 'color:#f59e0b'"
+                     x-text="costRoiRatio !== null ? costRoiRatio.toFixed(1)+'x' : '—'"></div>
+                <div class="text-xs" style="color:var(--text-3);">revenue / API cost</div>
+              </div>
+            </div>
+            <div class="mt-3 text-xs" style="color:var(--text-3);">
+              ⚠ Revenue estimate uses $3 CPM. Actual CPM varies by niche and audience geography.
+              <button @click="loadCostRoi()" class="ml-2 underline">Refresh from YouTube</button>
+            </div>
+          </div>
+
+          <!-- Pricing reference -->
+          <div class="glass rounded-2xl p-5">
+            <div class="text-sm font-semibold mb-3" style="color:var(--text-1);">Anthropic Pricing Reference</div>
+            <table class="w-full text-xs">
+              <thead>
+                <tr style="color:var(--text-3);">
+                  <th class="text-left pb-2 font-medium">Model</th>
+                  <th class="text-right pb-2 font-medium">Input / MTok</th>
+                  <th class="text-right pb-2 font-medium">Output / MTok</th>
+                </tr>
+              </thead>
+              <tbody style="color:var(--text-2);">
+                <tr style="border-top:1px solid rgba(255,255,255,0.05);">
+                  <td class="py-1.5 font-mono">claude-sonnet-4-6</td>
+                  <td class="py-1.5 text-right">$3.00</td>
+                  <td class="py-1.5 text-right">$15.00</td>
+                </tr>
+                <tr style="border-top:1px solid rgba(255,255,255,0.05);">
+                  <td class="py-1.5 font-mono">claude-opus-4-8</td>
+                  <td class="py-1.5 text-right">$15.00</td>
+                  <td class="py-1.5 text-right">$75.00</td>
+                </tr>
+                <tr style="border-top:1px solid rgba(255,255,255,0.05);">
+                  <td class="py-1.5 font-mono">claude-haiku-4-5</td>
+                  <td class="py-1.5 text-right">$0.80</td>
+                  <td class="py-1.5 text-right">$4.00</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /costs section -->
+
+      <!-- ════════════════════════════════════════════ GOALS SECTION -->
+      <div x-show="activeSection==='goals'" class="slide-in"
+           x-init="$watch('activeSection', v => { if(v==='goals') loadGoals() })">
+
+        <!-- Header -->
+        <div class="section-header">
+          <div class="section-icon" style="background:linear-gradient(135deg,#f59e0b,#d97706);">🎯</div>
+          <div>
+            <h2>Goals</h2>
+            <p class="text-xs mt-0.5" style="color:var(--text-3);">Real YouTube stats · auto-checked every hour</p>
+          </div>
+          <div class="ml-auto flex gap-2 flex-wrap">
+            <button @click="syncAll()"
+                    :disabled="syncingAll"
+                    class="h-8 px-4 rounded-xl text-xs flex items-center gap-1.5"
+                    style="background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);">
+              <span x-show="!syncingAll">🔄 Sync Real Data</span>
+              <span x-show="syncingAll" class="flex items-center gap-1.5">
+                <span class="spin-slow">◉</span> Syncing…
+              </span>
+            </button>
+            <button @click="agentAnalyzeGoals()" :disabled="goalAnalyzing"
+                    class="h-8 px-4 rounded-xl text-xs flex items-center gap-1.5"
+                    style="background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff;border:none;cursor:pointer;">
+              <span x-show="!goalAnalyzing">🤖 Analyze Channel</span>
+              <span x-show="goalAnalyzing" class="flex items-center gap-1">
+                <span class="spin-slow">◉</span> Analyzing…
+              </span>
+            </button>
+            <button @click="showGoalCreate=!showGoalCreate"
+                    class="h-8 px-4 rounded-xl text-xs btn-primary">+ Goal</button>
+          </div>
+        </div>
+
+        <!-- Sync result banner -->
+        <div x-show="syncResult" x-transition class="rounded-2xl p-4 mb-4"
+             style="background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.2);">
+          <div class="flex items-center justify-between">
+            <div class="text-xs" style="color:#10b981;">
+              <span class="font-bold">✓ Sync complete</span> ·
+              <span x-text="''+syncResult?.videos_learned+' videos learned'"></span> ·
+              <span x-text="''+syncResult?.goals_completed+' goals completed'"></span>
+              <span x-show="syncResult?.errors?.length > 0"
+                    class="ml-2" style="color:#f59e0b;"
+                    x-text="'⚠ '+syncResult.errors.join('; ')"></span>
+            </div>
+            <button @click="syncResult=null" class="text-xs" style="color:var(--text-3);">✕</button>
+          </div>
+        </div>
+
+        <!-- Agent analysis result -->
+        <div x-show="goalAnalysisResult" x-transition class="rounded-2xl p-5 mb-5"
+             style="background:linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.05));
+                    border:1px solid rgba(99,102,241,0.22);">
+          <div class="flex items-start justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="text-xl">🤖</span>
+              <span class="text-sm font-bold" style="color:var(--text-1);">Channel Analysis</span>
+            </div>
+            <button @click="goalAnalysisResult=null"
+                    class="w-6 h-6 rounded-lg text-xs flex items-center justify-center hover:bg-white/10"
+                    style="color:var(--text-3);">✕</button>
+          </div>
+          <div class="space-y-1 mb-4">
+            <template x-for="line in (goalAnalysisResult?.analysis_lines||[])" :key="line">
+              <div class="text-xs py-0.5 flex items-start gap-2" style="color:var(--text-2);">
+                <span style="color:var(--brand-lt);flex-shrink:0;">›</span>
+                <span x-text="line"></span>
+              </div>
+            </template>
+          </div>
+          <div x-show="(goalAnalysisResult?.created||[]).length > 0">
+            <div class="text-xs font-semibold mb-2" style="color:#a78bfa;">
+              Created <span x-text="goalAnalysisResult?.created?.length"></span> smart goals:
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <template x-for="g in (goalAnalysisResult?.created||[])" :key="g.id">
+                <span class="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full"
+                      style="background:rgba(99,102,241,0.15);color:#a78bfa;border:1px solid rgba(99,102,241,0.3);">
+                  <span x-text="g.icon"></span>
+                  <span x-text="g.title"></span>
+                </span>
+              </template>
+            </div>
+          </div>
+          <div x-show="(goalAnalysisResult?.created||[]).length === 0"
+               class="text-xs" style="color:var(--text-3);">
+            All goal types already have active goals.
+          </div>
+        </div>
+
+        <!-- Stats row -->
+        <div class="grid grid-cols-4 gap-3 mb-5">
+          <div class="glass rounded-2xl p-4 text-center">
+            <div class="text-2xl font-bold" style="color:#f59e0b;" x-text="goalsData.active||0"></div>
+            <div class="text-xs mt-1" style="color:var(--text-3);">Active</div>
+          </div>
+          <div class="glass rounded-2xl p-4 text-center">
+            <div class="text-2xl font-bold" style="color:#10b981;" x-text="goalsData.completed||0"></div>
+            <div class="text-xs mt-1" style="color:var(--text-3);">Completed</div>
+          </div>
+          <div class="glass rounded-2xl p-4 text-center">
+            <div class="text-2xl font-bold" style="color:#ef4444;" x-text="goalsData.failed||0"></div>
+            <div class="text-xs mt-1" style="color:var(--text-3);">Failed</div>
+          </div>
+          <div class="glass rounded-2xl p-4 text-center">
+            <div class="text-2xl font-bold" style="color:#a78bfa;"
+                 x-text="((goalsData.goals||[]).filter(g=>g.status==='active').length
+                   ? Math.max(...(goalsData.goals||[]).filter(g=>g.status==='active').map(g=>Math.min(100,Math.round((g.current||0)/g.target*100))))
+                   : 0)+'%'"></div>
+            <div class="text-xs mt-1" style="color:var(--text-3);">Best progress</div>
+          </div>
+        </div>
+
+        <!-- Create Goal form -->
+        <div x-show="showGoalCreate" x-transition class="glass rounded-2xl p-5 mb-5">
+          <div class="text-sm font-bold mb-4" style="color:var(--text-1);">Create New Goal</div>
+          <div class="grid gap-3" style="grid-template-columns:1fr 1fr;">
+            <div>
+              <label class="text-xs font-medium mb-1 block" style="color:var(--text-2);">Goal Type</label>
+              <select x-model="newGoalType" class="w-full rounded-xl px-3 py-2 text-sm"
+                      style="background:rgba(255,255,255,0.07);border:1px solid var(--border);color:var(--text-1);">
+                <option value="upload_count">🎬 Videos Published</option>
+                <option value="subscriber">👥 Subscribers</option>
+                <option value="view_count">👁 Total Views</option>
+                <option value="watch_hours">⏱ Watch Hours</option>
+                <option value="ypp">💰 YPP Ready</option>
+                <option value="monthly_uploads">📅 Uploads This Month</option>
+                <option value="monthly_views">📈 Views This Month</option>
+                <option value="cost_limit">💵 API Cost Under</option>
+                <option value="likes_total">👍 Total Likes</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs font-medium mb-1 block" style="color:var(--text-2);">Target Value</label>
+              <input type="number" x-model.number="newGoalTarget" min="1" placeholder="e.g. 1000"
+                     class="w-full rounded-xl px-3 py-2 text-sm"
+                     style="background:rgba(255,255,255,0.07);border:1px solid var(--border);color:var(--text-1);">
+            </div>
+            <div>
+              <label class="text-xs font-medium mb-1 block" style="color:var(--text-2);">Title (optional)</label>
+              <input type="text" x-model="newGoalTitle" placeholder="e.g. Reach 1K subscribers"
+                     class="w-full rounded-xl px-3 py-2 text-sm"
+                     style="background:rgba(255,255,255,0.07);border:1px solid var(--border);color:var(--text-1);">
+            </div>
+            <div>
+              <label class="text-xs font-medium mb-1 block" style="color:var(--text-2);">Deadline (optional)</label>
+              <input type="date" x-model="newGoalDeadline"
+                     class="w-full rounded-xl px-3 py-2 text-sm"
+                     style="background:rgba(255,255,255,0.07);border:1px solid var(--border);color:var(--text-1);">
+            </div>
+          </div>
+          <div class="flex gap-2 mt-4">
+            <button @click="createGoal()" :disabled="!newGoalTarget"
+                    class="btn-primary h-9 px-5 rounded-xl text-sm font-semibold">Create</button>
+            <button @click="showGoalCreate=false" class="btn-ghost h-9 px-4 rounded-xl text-sm">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Active Goals with real data source badges -->
+        <div class="mb-5">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-xs font-semibold uppercase tracking-wide" style="color:var(--text-3);">Active Goals</span>
+            <span class="text-xs px-1.5 py-0.5 rounded" style="background:rgba(245,158,11,0.1);color:#f59e0b;"
+                  x-text="(goalsData.goals||[]).filter(g=>g.status==='active').length"></span>
+            <span class="text-xs ml-auto" style="color:var(--text-3);">
+              Data sources: <span style="color:#38bdf8;">YT Analytics</span> · <span style="color:#f87171;">YouTube API</span> · <span style="color:var(--text-3);">Local files</span>
+            </span>
+          </div>
+          <div class="space-y-3">
+            <template x-for="g in (goalsData.goals||[]).filter(g=>g.status==='active')" :key="g.id">
+              <div class="glass rounded-2xl p-4">
+                <div class="flex items-start justify-between mb-2">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xl" x-text="g.icon"></span>
+                    <div>
+                      <div class="text-sm font-bold" style="color:var(--text-1);" x-text="g.title"></div>
+                      <div class="flex items-center gap-2 mt-0.5">
+                        <span class="text-xs px-1.5 py-0.5 rounded"
+                              :style="g.type==='watch_hours'||g.type==='ypp'
+                                ? 'background:rgba(56,189,248,0.1);color:#38bdf8;'
+                                : g.type==='subscriber'||g.type==='view_count'||g.type==='likes_total'
+                                ? 'background:rgba(239,68,68,0.1);color:#f87171;'
+                                : 'background:rgba(255,255,255,0.05);color:var(--text-3);'"
+                              x-text="g.type==='watch_hours'||g.type==='ypp'?'YT Analytics'
+                                     :g.type==='subscriber'||g.type==='view_count'||g.type==='likes_total'?'YouTube API'
+                                     :'Local'"></span>
+                        <span x-show="g.deadline" class="text-xs" style="color:var(--text-3);"
+                              x-text="'↦ '+g.deadline"></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 flex-shrink-0">
+                    <span class="text-sm font-bold"
+                          :style="((g.current||0)/g.target)>=0.9?'color:#10b981;':((g.current||0)/g.target)>=0.5?'color:#f59e0b;':'color:var(--brand-lt);'"
+                          x-text="Math.min(100,Math.round((g.current||0)/g.target*100))+'%'"></span>
+                    <button @click="deleteGoal(g.id)"
+                            class="w-6 h-6 rounded-lg flex items-center justify-center text-xs hover:bg-red-500/20"
+                            style="color:var(--text-3);">✕</button>
+                  </div>
+                </div>
+                <div class="h-2.5 rounded-full overflow-hidden mb-2" style="background:rgba(255,255,255,0.05);">
+                  <div class="h-full rounded-full score-bar-fill transition-all duration-700"
+                       :style="`width:${Math.min(100,(g.current||0)/g.target*100)}%;
+                                 background:${((g.current||0)/g.target)>=1
+                                   ?'linear-gradient(90deg,#10b981,#34d399)'
+                                   :((g.current||0)/g.target)>=0.7
+                                   ?'linear-gradient(90deg,#f59e0b,#fbbf24)'
+                                   :'linear-gradient(90deg,#6366f1,#a78bfa)'}`">
+                  </div>
+                </div>
+                <div class="flex items-center justify-between text-xs" style="color:var(--text-3);">
+                  <span>
+                    <span class="font-semibold" style="color:var(--text-1);"
+                          x-text="(g.current||0).toLocaleString()"></span>
+                    <span x-text="' '+g.unit"></span>
+                  </span>
+                  <span style="color:var(--text-3);">
+                    need <span class="font-semibold" style="color:var(--text-2);"
+                          x-text="Math.max(0,g.target-(g.current||0)).toLocaleString()+' '+g.unit"></span> more
+                  </span>
+                  <span x-text="'/ '+g.target.toLocaleString()"></span>
+                </div>
+              </div>
+            </template>
+
+            <div x-show="!(goalsData.goals||[]).some(g=>g.status==='active')"
+                 class="text-center py-8 text-sm rounded-2xl glass" style="color:var(--text-3);">
+              <div class="text-2xl mb-2">🎯</div>
+              <div>No active goals — click <strong>🤖 Analyze Channel</strong> to auto-generate</div>
+              <div class="text-xs mt-1">or <strong>+ Goal</strong> to create manually</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Completed Goals -->
+        <div x-show="(goalsData.goals||[]).some(g=>g.status==='completed')">
+          <div class="text-xs font-semibold mb-3 uppercase tracking-wide" style="color:var(--text-3);">Completed 🏆</div>
+          <div class="space-y-2">
+            <template x-for="g in (goalsData.goals||[]).filter(g=>g.status==='completed')" :key="g.id">
+              <div class="flex items-center gap-3 px-4 py-3 rounded-2xl"
+                   style="background:rgba(16,185,129,0.05);border:1px solid rgba(16,185,129,0.18);">
+                <span class="text-lg" x-text="g.icon"></span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-semibold truncate" style="color:#10b981;" x-text="g.title"></div>
+                  <div class="text-xs" style="color:var(--text-3);"
+                       x-text="(g.current||0).toLocaleString()+' '+g.unit
+                                +' · completed '+(g.completed_at||'').slice(0,10)"></div>
+                </div>
+                <span class="text-xs font-bold flex-shrink-0" style="color:#10b981;">✓ Done</span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+      </div><!-- /goals section -->
+
+      <!-- ════════════════════════════════════════════ AGENT SECTION -->
+      <div x-show="activeSection==='agent'" class="slide-in"
+           x-init="$watch('activeSection', v => { if(v==='agent') loadAgentInsights() })">
+
+        <div class="section-header">
+          <div class="section-icon" style="background:linear-gradient(135deg,#8b5cf6,#6366f1);">🤖</div>
+          <div>
+            <h2>Agent Intelligence</h2>
+            <p class="text-xs mt-0.5" style="color:var(--text-3);">Reads real YouTube stats · learns every <span x-text="agentData.interval_hours||6"></span>h</p>
+          </div>
+          <div class="ml-auto flex gap-2">
+            <button @click="syncAll()" :disabled="syncingAll"
+                    class="h-8 px-4 rounded-xl text-xs flex items-center gap-1.5"
+                    style="background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);">
+              <span x-show="!syncingAll">🔄 Sync Now</span>
+              <span x-show="syncingAll" class="flex items-center gap-1.5"><span class="spin-slow">◉</span> Syncing…</span>
+            </button>
+            <button @click="triggerAgentLearn()" :disabled="agentLearning"
+                    class="h-8 px-4 rounded-xl text-xs btn-ghost flex items-center gap-1.5">
+              <span x-show="!agentLearning">🧠 Learn Only</span>
+              <span x-show="agentLearning" class="flex items-center gap-1.5"><span class="spin-slow">◉</span> Learning…</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ── STATUS CARD ── -->
+        <div class="glass rounded-2xl p-4 mb-4">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <span class="text-lg">⚡</span>
+              <span class="text-sm font-bold" style="color:var(--text-1);">Auto-Learn</span>
+              <span class="text-xs px-2 py-0.5 rounded-full font-semibold"
+                    :style="agentData.auto_learn
+                      ? 'background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.2);'
+                      : 'background:rgba(100,100,100,0.12);color:var(--text-3);'"
+                    x-text="agentData.auto_learn ? 'ON' : 'OFF'"></span>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2">
+                <span class="text-xs" style="color:var(--text-3);">Auto-create goals</span>
+                <button @click="toggleAutoAnalyzeGoals()"
+                        class="relative w-9 h-5 rounded-full transition-colors"
+                        :style="agentData.auto_analyze_goals ? 'background:#6366f1;' : 'background:rgba(255,255,255,0.1);'">
+                  <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                        :style="agentData.auto_analyze_goals ? 'transform:translateX(16px)' : ''"></span>
+                </button>
+              </div>
+              <button @click="toggleAutoLearn()"
+                      class="relative w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none"
+                      :style="agentData.auto_learn ? 'background:#6366f1;' : 'background:rgba(255,255,255,0.1);'">
+                <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
+                      :style="agentData.auto_learn ? 'transform:translateX(20px)' : ''"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="grid gap-3 mb-3" style="grid-template-columns:repeat(4,1fr);">
+            <div class="rounded-xl p-3 text-center" style="background:rgba(139,92,246,0.08);">
+              <div class="text-xl font-bold" style="color:#a78bfa;" x-text="agentData.memory_size||0"></div>
+              <div class="text-xs mt-0.5" style="color:var(--text-3);">Videos learned</div>
+            </div>
+            <div class="rounded-xl p-3 text-center" style="background:rgba(99,102,241,0.08);">
+              <div class="text-sm font-bold" style="color:#818cf8;"
+                   x-text="agentData.last_learn_at ? agentTimeAgo(agentData.last_learn_at) : 'Never'"></div>
+              <div class="text-xs mt-0.5" style="color:var(--text-3);">Last synced</div>
+            </div>
+            <div class="rounded-xl p-3 text-center" style="background:rgba(16,185,129,0.06);">
+              <div class="text-sm font-bold" style="color:#34d399;"
+                   x-text="agentData.auto_learn && agentData.next_learn_at ? agentTimeAgo(agentData.next_learn_at, true) : '—'"></div>
+              <div class="text-xs mt-0.5" style="color:var(--text-3);">Next auto-learn</div>
+            </div>
+            <div class="rounded-xl p-3 text-center" style="background:rgba(56,189,248,0.06);">
+              <div class="text-sm font-bold" style="color:#38bdf8;"
+                   x-text="(agentData.last_learn_count||0)+' vids'"></div>
+              <div class="text-xs mt-0.5" style="color:var(--text-3);">Last batch</div>
+            </div>
+          </div>
+
+          <div x-show="agentData.auto_learn" class="flex items-center gap-3">
+            <span class="text-xs" style="color:var(--text-3);">Run every:</span>
+            <div class="flex gap-1.5">
+              <template x-for="h in [3,6,12,24]" :key="h">
+                <button @click="setLearnInterval(h)"
+                        class="px-3 py-1 rounded-lg text-xs font-semibold transition-all"
+                        :style="agentData.interval_hours===h
+                          ? 'background:#6366f1;color:#fff;'
+                          : 'background:rgba(255,255,255,0.06);color:var(--text-3);'"
+                        x-text="h+'h'"></button>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── REAL CHANNEL INSIGHTS ── -->
+        <div class="grid gap-3 mb-4" style="grid-template-columns:repeat(4,1fr);">
+          <div class="glass rounded-2xl p-4">
+            <div class="text-xs mb-1" style="color:var(--text-3);">Avg Views / Video</div>
+            <div class="text-2xl font-bold mono" style="color:var(--brand);"
+                 x-text="(agentData.insights?.avg_views||0).toLocaleString()"></div>
+            <div class="text-xs mt-1" style="color:var(--text-3);">from YouTube API</div>
+          </div>
+          <div class="glass rounded-2xl p-4">
+            <div class="text-xs mb-1" style="color:var(--text-3);">Best Upload Day</div>
+            <div class="text-xl font-bold" style="color:#10b981;"
+                 x-text="agentData.insights?.best_upload_day||'—'"></div>
+            <div class="text-xs mt-1" style="color:var(--text-3);"
+                 x-text="(agentData.insights?.best_day_avg_views||0).toLocaleString()+' avg views'"></div>
+          </div>
+          <div class="glass rounded-2xl p-4">
+            <div class="text-xs mb-1" style="color:var(--text-3);">Best Script Length</div>
+            <div class="text-sm font-bold" style="color:#f59e0b;"
+                 x-text="agentData.insights?.best_script_length||'—'"></div>
+            <div class="text-xs mt-1" style="color:var(--text-3);">by avg views</div>
+          </div>
+          <div class="glass rounded-2xl p-4">
+            <div class="text-xs mb-1" style="color:var(--text-3);">Avg Engagement</div>
+            <div class="text-2xl font-bold mono"
+                 :style="(agentData.insights?.avg_engagement||0)>0.03?'color:#10b981;':'color:#a78bfa;'"
+                 x-text="((agentData.insights?.avg_engagement||0)*100).toFixed(1)+'%'"></div>
+            <div class="text-xs mt-1"
+                 :style="(agentData.insights?.avg_engagement||0)>0.03?'color:#10b981;':'color:var(--text-3);'"
+                 x-text="(agentData.insights?.avg_engagement||0)>0.05?'Excellent':
+                          (agentData.insights?.avg_engagement||0)>0.03?'Good':'Growing'"></div>
+          </div>
+        </div>
+
+        <!-- ── TWO COLUMN: RECOMMENDATIONS + TOP VIDEOS ── -->
+        <div class="grid gap-4 mb-4" style="grid-template-columns:1fr 1fr;">
+
+          <!-- Recommendations -->
+          <div class="glass rounded-2xl p-4">
+            <div class="text-sm font-bold mb-3" style="color:var(--text-1);">🎯 Recommendations</div>
+            <div x-show="!(agentData.recommendations||[]).length"
+                 class="text-xs text-center py-6" style="color:var(--text-3);">
+              Click <strong>🔄 Sync Now</strong> to generate recommendations from real channel data.
+            </div>
+            <div class="space-y-2">
+              <template x-for="rec in (agentData.recommendations||[])" :key="rec.type">
+                <div class="p-3 rounded-xl"
+                     :style="rec.confidence==='high'
+                       ?'background:rgba(99,102,241,0.07);border:1px solid rgba(99,102,241,0.18);'
+                       :'background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.12);'">
+                  <div class="flex items-start justify-between gap-2 mb-1">
+                    <div class="text-xs font-bold" style="color:var(--text-1);" x-text="rec.title"></div>
+                    <span class="text-xs px-1.5 py-0.5 rounded flex-shrink-0"
+                          :style="rec.confidence==='high'
+                            ?'background:rgba(99,102,241,0.15);color:#a78bfa;'
+                            :'background:rgba(245,158,11,0.12);color:#f59e0b;'"
+                          x-text="rec.confidence"></span>
+                  </div>
+                  <div class="text-xs mb-1.5" style="color:var(--text-3);" x-text="rec.reason"></div>
+                  <div class="text-xs font-medium" style="color:var(--text-2);"
+                       x-text="'→ '+rec.action"></div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Top Videos from memory (real YouTube stats) -->
+          <div class="glass rounded-2xl p-4">
+            <div class="flex items-center justify-between mb-3">
+              <div class="text-sm font-bold" style="color:var(--text-1);">🏆 Top Videos (Real Views)</div>
+              <span class="text-xs px-1.5 py-0.5 rounded" style="background:rgba(239,68,68,0.1);color:#f87171;">
+                YouTube API
+              </span>
+            </div>
+            <div class="space-y-2">
+              <template x-for="(v, i) in (agentData.insights?.top_videos||[])" :key="v.slug">
+                <div class="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                     style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">
+                  <span class="text-xs font-bold w-4 text-center flex-shrink-0"
+                        :style="i===0?'color:#f59e0b;':i===1?'color:var(--text-3);':i===2?'color:#92400e;':'color:var(--text-4);'"
+                        x-text="'#'+(i+1)"></span>
+                  <span class="flex-1 truncate text-xs font-medium" style="color:var(--text-2);"
+                        x-text="(v.keyword||v.slug).replace(/_/g,' ')"></span>
+                  <div class="text-right flex-shrink-0">
+                    <div class="text-xs font-bold" style="color:var(--brand);"
+                         x-text="v.views.toLocaleString()"></div>
+                    <div class="text-xs" style="color:var(--text-3);">views</div>
+                  </div>
+                </div>
+              </template>
+              <div x-show="!(agentData.insights?.top_videos||[]).length"
+                   class="text-xs text-center py-4" style="color:var(--text-3);">
+                No memory yet — click <strong>🔄 Sync Now</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── TOPIC PERFORMANCE BARS ── -->
+        <div class="glass rounded-2xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <div class="text-sm font-bold" style="color:var(--text-1);">📊 Topic Performance</div>
+            <span class="text-xs" style="color:var(--text-3);"
+                  x-text="(agentData.top_topics||[]).length+' topics tracked'"></span>
+          </div>
+          <div x-show="!(agentData.top_topics||[]).length"
+               class="text-xs text-center py-4" style="color:var(--text-3);">
+            No topic data yet — learn from uploaded videos first.
+          </div>
+          <div class="space-y-2">
+            <template x-for="(t, i) in (agentData.top_topics||[]).slice(0,10)" :key="t.topic">
+              <div>
+                <div class="flex justify-between text-xs mb-1" style="color:var(--text-2);">
+                  <span class="font-medium capitalize flex items-center gap-1.5">
+                    <span :style="i<3?'color:#f59e0b;':'color:var(--text-4);'" x-text="'#'+(i+1)"></span>
+                    <span x-text="t.topic"></span>
+                  </span>
+                  <span style="color:var(--text-3);"
+                        x-text="t.avg_views.toLocaleString()+' avg · '+t.count+(t.count===1?' video':' videos')"></span>
+                </div>
+                <div class="h-1.5 rounded-full overflow-hidden" style="background:rgba(255,255,255,0.05);">
+                  <div class="h-full rounded-full score-bar-fill"
+                       style="background:linear-gradient(90deg,#8b5cf6,#6366f1);"
+                       :style="`width:${agentData.top_topics[0]?.avg_views>0
+                         ?(t.avg_views/agentData.top_topics[0].avg_views*100):0}%`">
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+      </div><!-- /agent section -->
+
+      <!-- ══════════════════════════ CHANNEL SEO ══════════════════════════ -->
+      <div x-show="activeSection==='channel_seo'" class="slide-in"
+           x-init="$watch('activeSection', v => { if(v==='channel_seo') loadChannelSeo() })">
+
+        <!-- ── HEADER ── -->
+        <div class="section-header">
+          <div class="section-icon" style="background:linear-gradient(135deg,#06b6d4,#6366f1);">🔍</div>
+          <div>
+            <h2>Channel SEO Optimizer</h2>
+            <p class="text-xs mt-0.5" style="color:var(--text-3);">
+              Reads your live YouTube channel → AI analyzes → generates + applies full SEO optimization
+            </p>
+          </div>
+          <div class="ml-auto flex gap-2">
+            <button @click="loadChannelSeo()" :disabled="seoFetching"
+                    class="h-8 px-3 rounded-xl text-xs btn-ghost flex items-center gap-1.5">
+              <span :class="seoFetching?'spin-slow':''">↺</span> Refresh
+            </button>
+            <button @click="runFullSeoOptimize()" :disabled="seoFetching||seoAnalyzing||seoGenerating||!tokenOk"
+                    class="h-8 px-4 rounded-xl text-xs flex items-center gap-1.5 font-semibold"
+                    style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;cursor:pointer;">
+              <span x-show="!seoFetching&&!seoAnalyzing&&!seoGenerating">✨ Analyze &amp; Optimize</span>
+              <span x-show="seoFetching" class="flex items-center gap-1.5"><span class="spin-slow">◉</span> Reading channel…</span>
+              <span x-show="seoAnalyzing" class="flex items-center gap-1.5"><span class="spin-slow">◉</span> Analyzing…</span>
+              <span x-show="seoGenerating" class="flex items-center gap-1.5"><span class="spin-slow">◉</span> Generating…</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Not connected warning -->
+        <div x-show="!tokenOk" class="glass rounded-2xl p-5 mb-4 text-center">
+          <div class="text-2xl mb-2">🔗</div>
+          <div class="text-sm font-semibold mb-1" style="color:var(--text-1);">YouTube Not Connected</div>
+          <div class="text-xs mb-3" style="color:var(--text-3);">Connect your YouTube account to read and optimize your channel SEO.</div>
+          <button @click="navTo('account')" class="btn-primary h-9 px-5 rounded-xl text-sm">Connect YouTube →</button>
+        </div>
+
+        <!-- Error banner -->
+        <div x-show="tokenOk && seoCurrentError" x-transition
+             class="flex items-start gap-3 rounded-2xl p-4 mb-4"
+             style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);">
+          <span style="color:#ef4444;font-size:1.1rem;flex-shrink:0;">⚠</span>
+          <div class="flex-1">
+            <div class="text-xs font-semibold mb-0.5" style="color:#ef4444;">Error</div>
+            <div class="text-xs" style="color:var(--text-2);" x-text="seoCurrentError"></div>
+            <div class="text-xs mt-1" style="color:var(--text-3);">
+              If your token is expired, go to
+              <button @click="navTo('account')" class="underline" style="color:#a78bfa;">Account → Re-Authorize</button>
+              and try again.
+            </div>
+          </div>
+          <button @click="seoCurrentError=null" style="color:var(--text-3);" class="text-lg leading-none">✕</button>
+        </div>
+
+        <!-- ── STEP PROGRESS BAR ── -->
+        <div x-show="tokenOk" class="glass rounded-2xl p-4 mb-4">
+          <div class="flex items-center gap-0">
+            <!-- Step 1 -->
+            <div class="flex items-center gap-2 flex-1">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                   :style="seoCurrent?.connected
+                     ?'background:#10b981;color:#fff;'
+                     :'background:rgba(255,255,255,0.08);color:var(--text-3);'">
+                <span x-show="seoCurrent?.connected">✓</span>
+                <span x-show="!seoCurrent?.connected">1</span>
+              </div>
+              <div>
+                <div class="text-xs font-semibold" style="color:var(--text-1);">Read Channel</div>
+                <div class="text-xs" style="color:var(--text-3);"
+                     x-text="seoCurrent?.connected?seoCurrent.channel_name:'Fetch from YouTube'"></div>
+              </div>
+            </div>
+            <div class="h-px flex-1 mx-2" style="background:var(--border);max-width:40px;"></div>
+            <!-- Step 2 -->
+            <div class="flex items-center gap-2 flex-1">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                   :style="seoAnalysis?.overall_score!=null
+                     ?'background:#f59e0b;color:#fff;'
+                     :'background:rgba(255,255,255,0.08);color:var(--text-3);'">
+                <span x-show="seoAnalysis?.overall_score!=null">✓</span>
+                <span x-show="seoAnalysis?.overall_score==null">2</span>
+              </div>
+              <div>
+                <div class="text-xs font-semibold" style="color:var(--text-1);">Analyze Issues</div>
+                <div class="text-xs" style="color:var(--text-3);"
+                     x-text="seoAnalysis?.overall_score!=null?'Grade: '+seoAnalysis.overall_grade+' ('+seoAnalysis.overall_score+'/100)':'AI audit current SEO'"></div>
+              </div>
+            </div>
+            <div class="h-px flex-1 mx-2" style="background:var(--border);max-width:40px;"></div>
+            <!-- Step 3 -->
+            <div class="flex items-center gap-2 flex-1">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                   :style="seoDesc
+                     ?'background:#6366f1;color:#fff;'
+                     :'background:rgba(255,255,255,0.08);color:var(--text-3);'">
+                <span x-show="seoDesc">✓</span>
+                <span x-show="!seoDesc">3</span>
+              </div>
+              <div>
+                <div class="text-xs font-semibold" style="color:var(--text-1);">Generate Optimized</div>
+                <div class="text-xs" style="color:var(--text-3);"
+                     x-text="seoDesc?'Score: '+(seoScore?.score||'?')+'/100 '+seoScore?.grade:'AI rewrites everything'"></div>
+              </div>
+            </div>
+            <div class="h-px flex-1 mx-2" style="background:var(--border);max-width:40px;"></div>
+            <!-- Step 4 -->
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                   :style="seoData?.applied
+                     ?'background:#10b981;color:#fff;'
+                     :'background:rgba(255,255,255,0.08);color:var(--text-3);'">
+                <span x-show="seoData?.applied">✓</span>
+                <span x-show="!seoData?.applied">4</span>
+              </div>
+              <div>
+                <div class="text-xs font-semibold" style="color:var(--text-1);">Apply to YouTube</div>
+                <div class="text-xs" style="color:var(--text-3);"
+                     x-text="seoData?.applied?'Applied '+seoData.applied_at?.slice(0,10):'Push live'"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── BEFORE / AFTER COMPARISON ── -->
+        <div x-show="tokenOk" class="grid gap-4 mb-4" style="grid-template-columns:1fr 1fr;">
+
+          <!-- BEFORE — Current channel state -->
+          <div class="space-y-3">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-bold px-2 py-0.5 rounded"
+                    style="background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.2);">
+                BEFORE — Current
+              </span>
+              <span x-show="seoCurrent?.fetched_at" class="text-xs" style="color:var(--text-3);"
+                    x-text="'fetched '+seoTimeAgo(seoCurrent?.fetched_at)"></span>
+              <button @click="fetchCurrentSeo()" :disabled="seoFetching"
+                      class="ml-auto text-xs btn-ghost h-6 px-2 rounded-lg">
+                <span :class="seoFetching?'spin-slow':''">↺</span>
+              </button>
+            </div>
+
+            <!-- Current grade card -->
+            <div class="glass rounded-2xl p-4">
+              <div x-show="!seoCurrent?.connected && !seoFetching"
+                   class="text-xs text-center py-4" style="color:var(--text-3);">
+                Click <strong>✨ Analyze &amp; Optimize</strong> to read your channel
+              </div>
+              <div x-show="seoFetching" class="text-xs text-center py-4 flex items-center justify-center gap-2" style="color:var(--text-3);">
+                <span class="spin-slow">◉</span> Reading from YouTube…
+              </div>
+              <div x-show="seoCurrent?.connected">
+                <div class="flex items-center gap-3 mb-3">
+                  <div class="flex-1">
+                    <div class="text-sm font-bold truncate" style="color:var(--text-1);"
+                         x-text="seoCurrent?.channel_name||'—'"></div>
+                    <div class="text-xs mt-0.5" style="color:var(--text-3);">
+                      <span x-text="(seoCurrent?.subscribers||0).toLocaleString()"></span> subs ·
+                      <span x-text="(seoCurrent?.video_count||0)"></span> videos
+                    </div>
+                  </div>
+                  <div class="text-center" x-show="seoAnalysis">
+                    <div class="text-2xl font-bold"
+                         :style="seoAnalysis?.overall_score>=70?'color:#10b981;':seoAnalysis?.overall_score>=50?'color:#f59e0b;':'color:#ef4444;'"
+                         x-text="seoAnalysis?.overall_score||0"></div>
+                    <div class="text-xs font-bold"
+                         :style="seoAnalysis?.overall_score>=70?'color:#10b981;':seoAnalysis?.overall_score>=50?'color:#f59e0b;':'color:#ef4444;'"
+                         x-text="seoAnalysis?.overall_grade||''"></div>
+                  </div>
+                </div>
+                <!-- Current description preview -->
+                <div class="text-xs rounded-xl p-3 mb-2"
+                     style="background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.15);color:var(--text-2);max-height:120px;overflow-y:auto;line-height:1.5;"
+                     x-text="seoCurrent?.description||'(no description set)'"></div>
+                <!-- Current keywords -->
+                <div class="flex flex-wrap gap-1 mb-2">
+                  <template x-for="kw in (seoCurrent?.keywords||[]).slice(0,8)" :key="kw">
+                    <span class="text-xs px-1.5 py-0.5 rounded"
+                          style="background:rgba(239,68,68,0.08);color:#f87171;border:1px solid rgba(239,68,68,0.15);"
+                          x-text="kw"></span>
+                  </template>
+                  <span x-show="(seoCurrent?.keywords||[]).length===0"
+                        class="text-xs" style="color:var(--text-4);">(no keywords set)</span>
+                  <span x-show="(seoCurrent?.keywords||[]).length>8"
+                        class="text-xs" style="color:var(--text-3);"
+                        x-text="'+'+(seoCurrent.keywords.length-8)+' more'"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Analysis result -->
+            <div x-show="seoAnalysis" class="glass rounded-2xl p-4">
+              <div class="text-xs font-semibold mb-2" style="color:var(--text-1);">
+                AI Analysis
+                <span x-show="seoAnalysis?.analyzing" class="spin-slow ml-1">◉</span>
+              </div>
+              <!-- Verdict -->
+              <div x-show="seoAnalysis?.verdict" class="text-xs mb-3 p-2 rounded-lg"
+                   style="background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.15);color:#fbbf24;"
+                   x-text="seoAnalysis?.verdict"></div>
+              <!-- Issues -->
+              <div x-show="(seoAnalysis?.description_issues||[]).length>0||
+                            (seoAnalysis?.keyword_issues||[]).length>0||
+                            (seoAnalysis?.missing_elements||[]).length>0" class="mb-2">
+                <div class="text-xs font-semibold mb-1.5" style="color:#ef4444;">Issues found</div>
+                <div class="space-y-1">
+                  <template x-for="i in [...(seoAnalysis?.description_issues||[]),
+                                          ...(seoAnalysis?.keyword_issues||[]),
+                                          ...(seoAnalysis?.missing_elements||[])]" :key="i">
+                    <div class="text-xs flex items-start gap-1.5" style="color:var(--text-2);">
+                      <span style="color:#ef4444;flex-shrink:0;">✗</span><span x-text="i"></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+              <!-- Strengths -->
+              <div x-show="(seoAnalysis?.strengths||[]).length>0">
+                <div class="text-xs font-semibold mb-1.5" style="color:#10b981;">What's good</div>
+                <div class="space-y-1">
+                  <template x-for="s in (seoAnalysis?.strengths||[])" :key="s">
+                    <div class="text-xs flex items-start gap-1.5" style="color:var(--text-2);">
+                      <span style="color:#10b981;flex-shrink:0;">✓</span><span x-text="s"></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- AFTER — AI-Optimized -->
+          <div class="space-y-3">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-bold px-2 py-0.5 rounded"
+                    style="background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.2);">
+                AFTER — Optimized
+              </span>
+              <span x-show="seoScore?.score" class="text-xs font-semibold"
+                    :style="(seoScore?.score||0)>=85?'color:#10b981;':(seoScore?.score||0)>=65?'color:#f59e0b;':'color:var(--text-3);'"
+                    x-text="seoScore?.score+'/100 '+seoScore?.grade"></span>
+              <button x-show="seoDesc" @click="generateChannelSeo()" :disabled="seoGenerating"
+                      class="ml-auto text-xs btn-ghost h-6 px-2 rounded-lg flex items-center gap-1">
+                <span :class="seoGenerating?'spin-slow':''">↺</span> Regen
+              </button>
+            </div>
+
+            <!-- Optimized description editor -->
+            <div class="glass rounded-2xl p-4">
+              <div x-show="!seoDesc && !seoGenerating"
+                   class="text-xs text-center py-8" style="color:var(--text-3);">
+                <div class="text-2xl mb-2">✨</div>
+                <div>Click <strong>✨ Analyze &amp; Optimize</strong> to generate the optimized version</div>
+              </div>
+              <div x-show="seoGenerating" class="text-xs text-center py-8 flex flex-col items-center gap-2" style="color:var(--text-3);">
+                <span class="spin-slow text-2xl">◉</span>
+                <span>AI is rewriting your channel SEO…</span>
+              </div>
+              <div x-show="seoDesc && !seoGenerating">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-semibold" style="color:var(--text-2);">Description</span>
+                  <span class="text-xs" :style="seoDesc.length>=700?'color:#10b981;':'color:#f59e0b;'"
+                        x-text="seoDesc.length+'/1000 chars'"></span>
+                </div>
+                <textarea x-model="seoDesc" rows="8" @input="debouncedScore()"
+                          class="w-full rounded-xl px-3 py-2 text-xs resize-none mb-3"
+                          style="background:rgba(16,185,129,0.04);border:1px solid rgba(16,185,129,0.2);
+                                 color:var(--text-1);line-height:1.6;font-family:inherit;"></textarea>
+                <!-- Improvement notes -->
+                <div x-show="(seoData?.improvement_notes||[]).length>0" class="mb-3">
+                  <div class="text-xs font-semibold mb-1" style="color:#38bdf8;">What changed</div>
+                  <div class="space-y-1">
+                    <template x-for="n in (seoData?.improvement_notes||[])" :key="n">
+                      <div class="text-xs flex items-start gap-1.5" style="color:var(--text-3);">
+                        <span style="color:#38bdf8;flex-shrink:0;">›</span><span x-text="n"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                <!-- Optimized keywords -->
+                <div class="text-xs font-semibold mb-1.5" style="color:var(--text-2);">Keywords
+                  <span class="font-normal" style="color:var(--text-3);" x-text="'('+seoKeywords.length+'/15)'"></span>
+                </div>
+                <div class="flex flex-wrap gap-1 mb-2">
+                  <template x-for="(kw, i) in seoKeywords" :key="kw+i">
+                    <div class="flex items-center gap-1 px-2 py-0.5 rounded text-xs"
+                         style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.2);color:#a78bfa;">
+                      <span x-text="kw"></span>
+                      <button @click="seoKeywords.splice(i,1);debouncedScore()"
+                              class="opacity-50 hover:opacity-100 leading-none ml-0.5">✕</button>
+                    </div>
+                  </template>
+                </div>
+                <div class="flex gap-2">
+                  <input type="text" x-model="seoKwInput"
+                         @keydown.enter="if(seoKwInput.trim()&&seoKeywords.length<15){seoKeywords.push(seoKwInput.trim());seoKwInput='';debouncedScore()}"
+                         placeholder="Add keyword…"
+                         class="flex-1 rounded-lg px-2.5 py-1.5 text-xs"
+                         style="background:rgba(255,255,255,0.06);border:1px solid var(--border);color:var(--text-1);">
+                  <button @click="if(seoKwInput.trim()&&seoKeywords.length<15){seoKeywords.push(seoKwInput.trim());seoKwInput='';debouncedScore()}"
+                          class="h-7 px-2.5 rounded-lg btn-ghost text-xs">+</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Score detail -->
+            <div x-show="seoScore && seoDesc" class="glass rounded-2xl p-4">
+              <div class="flex items-center gap-3 mb-3">
+                <div class="relative">
+                  <svg width="64" height="64" viewBox="0 0 64 64">
+                    <circle cx="32" cy="32" r="27" class="ring-track" style="stroke-width:5;"/>
+                    <circle cx="32" cy="32" r="27" class="ring-fill"
+                            :style="`stroke:${(seoScore?.score||0)>=85?'#10b981':(seoScore?.score||0)>=60?'#f59e0b':'#ef4444'};
+                                     stroke-dasharray:169.6;stroke-dashoffset:${169.6*(1-(seoScore?.score||0)/100)}`"/>
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span class="font-bold mono text-sm" style="color:var(--text-1);"
+                          x-text="seoScore?.score||0"></span>
+                  </div>
+                </div>
+                <div class="flex-1 space-y-1.5">
+                  <div class="flex justify-between text-xs">
+                    <span style="color:var(--text-3);">Length</span>
+                    <span :style="(seoScore?.length||0)>=700?'color:#10b981;':'color:#f59e0b;'"
+                          x-text="(seoScore?.length||0)+' chars'"></span>
+                  </div>
+                  <div class="flex justify-between text-xs">
+                    <span style="color:var(--text-3);">Keywords</span>
+                    <span :style="(seoScore?.kw_count||0)>=12?'color:#10b981;':'color:#f59e0b;'"
+                          x-text="(seoScore?.kw_count||0)+' tags'"></span>
+                  </div>
+                  <div class="flex justify-between text-xs">
+                    <span style="color:var(--text-3);">KWs in desc</span>
+                    <span style="color:var(--text-2);"
+                          x-text="(seoScore?.kws_in_desc||0)+' of '+(seoScore?.kw_count||0)"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="space-y-1">
+                <template x-for="issue in (seoScore?.issues||[])" :key="issue">
+                  <div class="text-xs flex gap-1.5" style="color:#f59e0b;">
+                    <span>›</span><span x-text="issue"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Optional custom notes -->
+            <div x-show="seoDesc" class="glass rounded-2xl p-4">
+              <div class="text-xs font-semibold mb-2" style="color:var(--text-2);">Optional Notes</div>
+              <input type="text" x-model="seoCustomNotes"
+                     placeholder="Tone, audience, CTA, links, upload schedule…"
+                     class="w-full rounded-xl px-3 py-2 text-xs"
+                     style="background:rgba(255,255,255,0.06);border:1px solid var(--border);color:var(--text-1);">
+              <button @click="generateChannelSeo()" :disabled="seoGenerating"
+                      class="mt-2 text-xs btn-ghost h-6 px-2 rounded-lg">↺ Regenerate with notes</button>
+            </div>
+
+            <!-- Apply button -->
+            <div x-show="seoDesc">
+              <button @click="applyChannelSeo()" :disabled="seoApplying || !tokenOk"
+                      class="w-full h-11 rounded-2xl font-bold text-sm flex items-center justify-center gap-2"
+                      style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;cursor:pointer;">
+                <span x-show="!seoApplying">🚀 Apply to YouTube Channel</span>
+                <span x-show="seoApplying" class="flex items-center gap-2">
+                  <span class="spin-slow">◉</span> Applying to YouTube…
+                </span>
+              </button>
+              <div x-show="seoApplyResult" x-transition class="mt-2 rounded-xl p-3 text-xs"
+                   :style="seoApplyResult?.ok
+                     ?'background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);color:#10b981;'
+                     :'background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);color:#ef4444;'">
+                <span x-show="seoApplyResult?.ok">✅ Channel SEO is now LIVE on YouTube! Description + keywords updated.</span>
+                <span x-show="!seoApplyResult?.ok" x-text="'❌ '+seoApplyResult?.error"></span>
+              </div>
+            </div>
+          </div>
+        </div><!-- /before-after -->
+
+        <!-- ── EXTRAS: generated only ── -->
+        <div x-show="seoData?.trailer_hook||seoData?.banner_tagline||(seoData?.seo_tips||[]).length>0">
+
+          <div class="grid gap-4 mb-4" style="grid-template-columns:1.2fr 0.8fr;">
+            <!-- Trailer hook -->
+            <div class="glass rounded-2xl p-4">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold uppercase tracking-wide" style="color:var(--text-3);">🎬 Trailer Script Hook (30s)</span>
+                <button @click="navigator.clipboard.writeText(seoData.trailer_hook)"
+                        class="text-xs btn-ghost h-6 px-2 rounded-lg">Copy</button>
+              </div>
+              <div class="text-xs leading-relaxed" style="color:var(--text-2);white-space:pre-wrap;"
+                   x-text="seoData?.trailer_hook||'—'"></div>
+            </div>
+            <!-- Banner + links -->
+            <div class="space-y-3">
+              <div class="glass rounded-2xl p-4">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs font-semibold uppercase tracking-wide" style="color:var(--text-3);">🖼 Banner Tagline</span>
+                  <button @click="navigator.clipboard.writeText(seoData.banner_tagline)"
+                          class="text-xs btn-ghost h-5 px-2 rounded-lg">Copy</button>
+                </div>
+                <div class="text-base font-bold mt-1" style="color:var(--text-1);"
+                     x-text="seoData?.banner_tagline||'—'"></div>
+              </div>
+              <div x-show="(seoData?.about_links||[]).length>0" class="glass rounded-2xl p-4">
+                <div class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--text-3);">🔗 About Links</div>
+                <template x-for="l in (seoData?.about_links||[])" :key="l.label">
+                  <div class="text-xs mb-1" style="color:var(--text-2);">
+                    <span class="font-medium" x-text="l.label"></span>
+                    <span style="color:var(--text-3);" x-text="' — '+l.note"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- Featured sections + SEO tips -->
+          <div class="grid gap-4" style="grid-template-columns:1fr 1fr;">
+            <div x-show="(seoData?.featured_sections||[]).length>0" class="glass rounded-2xl p-4">
+              <div class="text-xs font-semibold uppercase tracking-wide mb-3" style="color:var(--text-3);">📋 Featured Sections</div>
+              <div class="space-y-2">
+                <template x-for="(s,i) in (seoData?.featured_sections||[])" :key="s.title">
+                  <div class="rounded-xl p-2.5"
+                       style="background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.12);">
+                    <div class="text-xs font-semibold" style="color:#a78bfa;" x-text="'#'+(i+1)+' '+s.title"></div>
+                    <div class="text-xs mt-0.5" style="color:var(--text-3);" x-text="s.type+' — '+s.note"></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+            <div x-show="(seoData?.seo_tips||[]).length>0" class="glass rounded-2xl p-4">
+              <div class="text-xs font-semibold uppercase tracking-wide mb-3" style="color:var(--text-3);">💡 SEO Tips</div>
+              <div class="space-y-2">
+                <template x-for="(tip,i) in (seoData?.seo_tips||[])" :key="tip">
+                  <div class="flex items-start gap-2 p-2.5 rounded-xl"
+                       style="background:rgba(16,185,129,0.04);border:1px solid rgba(16,185,129,0.1);">
+                    <span class="text-xs font-bold flex-shrink-0" style="color:#10b981;" x-text="(i+1)+'.'"></span>
+                    <span class="text-xs" style="color:var(--text-2);" x-text="tip"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /extras -->
+
+      </div><!-- /channel_seo section -->
+
       <div x-show="activeSection==='settings'" class="slide-in">
         <div class="section-header">
           <div class="section-icon">⚙</div>
@@ -2686,6 +4665,62 @@ function dash() {
     // System info
     sysInfo: null,
 
+    // Goals
+    goalsData:          { active: 0, completed: 0, failed: 0, goals: [] },
+    showGoalCreate:     false,
+    newGoalType:        'upload_count',
+    newGoalTarget:      null,
+    newGoalTitle:       '',
+    newGoalDeadline:    '',
+    goalAnalyzing:      false,
+    syncingAll:         false,
+
+    // Social media
+    socialStatus:  { tiktok: { connected: false }, facebook: { connected: false } },
+    socialPosting: {},
+    ttPosting:     false,
+    fbPosting:     false,
+
+    // Channel SEO
+    seoData:         {},
+    seoDesc:         '',
+    seoKeywords:     [],
+    seoKwInput:      '',
+    seoChannelName:  '',
+    seoNiche:        '',
+    seoCustomNotes:  '',
+    seoScore:        null,
+    seoGenerating:   false,
+    seoApplying:     false,
+    seoApplyResult:  null,
+    _seoScoreTimer:  null,
+    seoFetching:      false,
+    seoAnalyzing:     false,
+    seoCurrent:       null,
+    seoAnalysis:      null,
+    seoCurrentError:  null,
+    syncResult:         null,
+    goalAnalysisResult: null,
+
+    // Agent
+    agentData:       { insights: {}, top_topics: [], recommendations: [], memory_size: 0, last_learn_count: 0 },
+    agentLearning:   false,
+
+    // Cost Analysis
+    costTab:            'overview',
+    costSummary:        {},
+    costHistory:        [],
+    costPerVideo:       [],
+    costDaily:          [],
+    costLoading:        false,
+    costPerVideoLoading: false,
+    costBackfilling:    false,
+    costBudget:         50,
+    costRoiCostPerView: null,
+    costRoiTotalViews:  null,
+    costRoiEstRevenue:  null,
+    costRoiRatio:       null,
+
     // Schedule
     scheduleTime:    '09:00',
     scheduleCount:   1,
@@ -2708,6 +4743,11 @@ function dash() {
     // Analytics
     analytics:        null,
     analyticsLoading: false,
+
+    // Shorts analytics
+    shortsAnalytics:        null,
+    shortsAnalyticsSummary: null,
+    loadingShortsAnalytics: false,
 
     // Settings modal
     showSettings: false,
@@ -2737,6 +4777,34 @@ function dash() {
     get shortsCount() {
       return this.videos.filter(v => v.has_short).length;
     },
+
+    get channelHealthScore() {
+      let score = 0;
+      // Videos produced (0-20)
+      score += Math.min(20, this.videos.length * 2);
+      // Upload consistency: monthly uploads vs goal 8 (0-15)
+      const moUp = this.queue?.filter ? 0 : 0; // queue not a reliable source — use sysInfo
+      score += Math.min(15, (this.sysInfo?.videos_uploaded || 0) >= 10 ? 15 : (this.sysInfo?.videos_uploaded || 0) * 1.5);
+      // Engagement (0-20)
+      const eng = (this.agentData?.insights?.avg_engagement || 0);
+      score += Math.min(20, eng * 500);
+      // YPP progress (0-20): average of subs% and wh%
+      const subPct = Math.min(100, (this.analytics?.ypp?.subscribers || 0) / 10);
+      const whPct  = Math.min(100, (this.analytics?.ypp?.watch_hours  || 0) / 40);
+      score += Math.min(20, (subPct + whPct) / 10);
+      // Agent memory active (0-10)
+      score += this.agentData?.memory_size > 0 ? Math.min(10, this.agentData.memory_size) : 0;
+      // Goals set (0-10)
+      score += Math.min(10, (this.goalsData?.active || 0) * 2);
+      // Connected integrations bonus (0-5)
+      if (this.tokenOk) score += 3;
+      if (this.sheetUrl) score += 2;
+      return Math.min(100, Math.round(score));
+    },
+
+    get channelBudget() {
+      return this.channelSettings?.monthly_budget_usd || 0;
+    },
     get filteredVideos() {
       if (!this.videoFilter.trim()) return this.videos;
       const q = this.videoFilter.toLowerCase();
@@ -2751,6 +4819,14 @@ function dash() {
     get paginatedVideos() {
       const start = (this.page - 1) * this.perPage;
       return this.filteredVideos.slice(start, start + this.perPage);
+    },
+
+    get costDailyMax() {
+      if (!this.costDaily.length) return 1;
+      return Math.max(1, ...this.costDaily.map(d => d.cost_usd));
+    },
+    get costHasEstimated() {
+      return this.costHistory.some(e => e.estimated);
     },
 
     get calMonthLabel() {
@@ -2833,12 +4909,21 @@ function dash() {
       this.loadKeywordQueue();
       this.loadChannelSettings();
       this.loadAutoReplyStats();
+      this.loadCosts();
+      this.loadGoals();
+      this.checkSocialStatus();
     },
 
     // ── Navigation ─────────────────────────────────────────────────────────
     navTo(section) {
       this.activeSection = section;
       this.page = 1;
+      if (section === 'costs') {
+        this.loadCosts();
+        this.loadCostDaily();
+      }
+      if (section === 'goals') this.loadGoals();
+      if (section === 'agent') this.loadAgentInsights();
     },
 
     // ── Channel ────────────────────────────────────────────────────────────
@@ -2995,6 +5080,446 @@ function dash() {
       } catch(_) {}
     },
 
+    // ── Goals ──────────────────────────────────────────────────────────
+    async loadGoals() {
+      try {
+        const r = await fetch('/api/goals');
+        this.goalsData = await r.json();
+      } catch(_) {}
+    },
+
+    async createGoal() {
+      if (!this.newGoalTarget) return;
+      try {
+        await fetch('/api/goals', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            type:     this.newGoalType,
+            target:   this.newGoalTarget,
+            title:    this.newGoalTitle,
+            deadline: this.newGoalDeadline,
+          }),
+        });
+        this.showGoalCreate = false;
+        this.newGoalTarget  = null;
+        this.newGoalTitle   = '';
+        this.newGoalDeadline = '';
+        await this.loadGoals();
+      } catch(_) {}
+    },
+
+    async deleteGoal(id) {
+      await fetch('/api/goals/'+id, { method: 'DELETE' });
+      await this.loadGoals();
+    },
+
+    async checkGoals() {
+      await fetch('/api/goals/check', { method: 'POST' });
+      await this.loadGoals();
+    },
+
+    async agentAnalyzeGoals() {
+      this.goalAnalyzing      = true;
+      this.goalAnalysisResult = null;
+      try {
+        const r    = await fetch('/api/goals/analyze', { method: 'POST' });
+        const data = await r.json();
+        this.goalAnalysisResult = data;
+        await this.loadGoals();
+      } catch(e) {
+        this.goalAnalysisResult = {
+          analysis_lines: ['❌ Analysis failed — make sure analytics are connected.'],
+          created: [], skipped: []
+        };
+      }
+      this.goalAnalyzing = false;
+    },
+
+    // ── Agent ───────────────────────────────────────────────────────────
+    async loadAgentInsights() {
+      try {
+        const [insR, setR] = await Promise.all([
+          fetch('/api/agent/insights'),
+          fetch('/api/agent/settings'),
+        ]);
+        const ins = await insR.json();
+        const set = await setR.json();
+        this.agentData = { ...ins, ...set };
+      } catch(_) {}
+    },
+
+    async triggerAgentLearn() {
+      this.agentLearning = true;
+      try {
+        await fetch('/api/agent/learn', { method: 'POST' });
+        await new Promise(r => setTimeout(r, 4000));
+        await this.loadAgentInsights();
+        await this.loadGoals();
+      } catch(_) {}
+      this.agentLearning = false;
+    },
+
+    async syncAll() {
+      this.syncingAll = true;
+      this.syncResult = null;
+      try {
+        const r = await fetch('/api/sync-all', { method: 'POST' });
+        const data = await r.json();
+        this.syncResult = data;
+        // Update goals
+        if (data.goals) {
+          this.goalsData = data.goals;
+        }
+        // Update agent
+        if (data.agent) {
+          this.agentData = { ...this.agentData, ...data.agent };
+        }
+        // Re-fetch analytics to update KPI cards
+        await this.fetchAnalytics();
+      } catch(e) {
+        this.syncResult = { videos_learned: 0, goals_completed: 0, errors: [String(e)] };
+      }
+      this.syncingAll = false;
+    },
+
+    // ── Channel SEO ──────────────────────────────────────────────────────────
+    seoTimeAgo(iso) {
+      if (!iso) return '';
+      const diff = (Date.now() - new Date(iso+'Z').getTime()) / 1000;
+      if (diff < 60)   return 'just now';
+      if (diff < 3600) return Math.round(diff/60)+'m ago';
+      return Math.round(diff/3600)+'h ago';
+    },
+
+    async loadChannelSeo() {
+      // Load last saved/generated SEO data from disk
+      try {
+        const r = await fetch('/api/channel-seo');
+        const d = await r.json();
+        this.seoData = d;
+        if (d.description)  this.seoDesc       = d.description;
+        if (d.keywords)     this.seoKeywords    = Array.isArray(d.keywords) ? d.keywords : [];
+        if (d.channel_name) this.seoChannelName = d.channel_name;
+        if (d.niche)        this.seoNiche       = d.niche;
+        if (this.seoDesc)   await this.scoreChannelSeo();
+      } catch(_) {}
+      // Also fetch live channel state if token available
+      if (this.tokenOk && !this.seoCurrent?.connected) {
+        await this.fetchCurrentSeo();
+      }
+    },
+
+    async fetchCurrentSeo() {
+      this.seoFetching     = true;
+      this.seoCurrentError = null;
+      try {
+        const r   = await fetch('/api/channel-seo/current');
+        const txt = await r.text();
+        let d;
+        try { d = JSON.parse(txt); }
+        catch(_) { throw new Error('Server returned non-JSON: ' + txt.slice(0, 200)); }
+        console.log('[SEO current]', r.status, d);
+        if (d.connected) {
+          this.seoCurrent     = d;
+          this.seoChannelName = d.channel_name || this.seoChannelName;
+        } else {
+          this.seoCurrentError = d.error || 'API returned connected=false with no error message';
+        }
+      } catch(e) {
+        console.error('[SEO current error]', e);
+        this.seoCurrentError = e.message;
+      }
+      this.seoFetching = false;
+      return !!this.seoCurrent?.connected;
+    },
+
+    async runFullSeoOptimize() {
+      if (!this.tokenOk) return;
+      this.seoCurrentError = null;
+      // Step 1: Fetch current channel state from YouTube
+      const fetchOk = await this.fetchCurrentSeo();
+      if (!fetchOk) {
+        // Error is already set in seoCurrentError — UI will show it
+        return;
+      }
+      // Step 2: Analyze current SEO with Claude
+      this.seoAnalyzing = true;
+      this.seoAnalysis  = null;
+      try {
+        const ar = await fetch('/api/channel-seo/analyze', {
+          method:  'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            current_description: this.seoCurrent.description || '',
+            current_keywords:    this.seoCurrent.keywords    || [],
+          }),
+        });
+        if (!ar.ok) throw new Error(`Analyze API returned ${ar.status}`);
+        const analysis = await ar.json();
+        if (analysis.error) throw new Error(analysis.error);
+        this.seoAnalysis = analysis;
+      } catch(e) {
+        this.seoCurrentError = 'Analysis failed: ' + e.message;
+        this.seoAnalyzing = false;
+        return;
+      }
+      this.seoAnalyzing = false;
+      // Step 3: Generate optimized version
+      await this.generateChannelSeo();
+    },
+
+    async generateChannelSeo() {
+      this.seoGenerating  = true;
+      this.seoApplyResult = null;
+      try {
+        const r = await fetch('/api/channel-seo/generate', {
+          method:  'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            niche:                this.seoNiche    || this.csNiche || '',
+            channel_name:         this.seoChannelName || this.seoCurrent?.channel_name || this.analytics?.channel?.title || '',
+            seed_topics:          this.csSeeds     || [],
+            top_videos:           this.agentData?.insights?.top_videos || [],
+            subscriber_count:     this.seoCurrent?.subscribers || this.analytics?.summary?.subscribers || 0,
+            video_count:          this.seoCurrent?.video_count || this.videos?.length || 0,
+            custom_notes:         this.seoCustomNotes || '',
+            current_description:  this.seoCurrent?.description  || '',
+            current_keywords:     this.seoCurrent?.keywords      || [],
+            analysis:             this.seoAnalysis || {},
+          }),
+        });
+        const d = await r.json();
+        if (d.error) { alert('Generate error: ' + d.error); return; }
+        this.seoData     = d;
+        this.seoDesc     = d.description || '';
+        this.seoKeywords = Array.isArray(d.keywords) ? d.keywords : [];
+        await this.scoreChannelSeo();
+      } catch(e) { alert('Generate failed: ' + e); }
+      this.seoGenerating = false;
+    },
+
+    async scoreChannelSeo() {
+      if (!this.seoDesc && !this.seoKeywords.length) { this.seoScore = null; return; }
+      try {
+        const params = new URLSearchParams({
+          description: this.seoDesc,
+          keywords:    this.seoKeywords.join(', '),
+        });
+        const r = await fetch('/api/channel-seo/score?' + params);
+        this.seoScore = await r.json();
+      } catch(_) {}
+    },
+
+    debouncedScore() {
+      clearTimeout(this._seoScoreTimer);
+      this._seoScoreTimer = setTimeout(() => this.scoreChannelSeo(), 600);
+    },
+
+    async applyChannelSeo() {
+      if (!this.seoDesc) return;
+      this.seoApplying    = true;
+      this.seoApplyResult = null;
+      try {
+        const r = await fetch('/api/channel-seo/apply', {
+          method:  'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            description: this.seoDesc,
+            keywords:    this.seoKeywords,
+          }),
+        });
+        const d = await r.json();
+        this.seoApplyResult = d;
+        if (d.ok) {
+          this.seoData = { ...this.seoData, applied: true,
+                           applied_at: new Date().toISOString() };
+          // Refresh the "current" panel so before/after diverges properly
+          await this.fetchCurrentSeo();
+        }
+      } catch(e) { this.seoApplyResult = { ok: false, error: String(e) }; }
+      this.seoApplying = false;
+    },
+
+    // ── Social Media ────────────────────────────────────────────────────────────
+    async checkSocialStatus() {
+      try {
+        const r = await fetch('/api/social/status');
+        const d = await r.json();
+        this.socialStatus = d;
+      } catch(_) {}
+    },
+
+    async postToTikTok(slug) {
+      this.$set(this.socialPosting, slug+'_tt', true);
+      try {
+        const r = await fetch(`/api/social/tiktok/${slug}`, { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) alert('Posted to TikTok!');
+        else      alert('TikTok error: ' + d.error);
+      } catch(e) { alert('Error: ' + e); }
+      this.$set(this.socialPosting, slug+'_tt', false);
+    },
+
+    async postToFacebook(slug) {
+      this.$set(this.socialPosting, slug+'_fb', true);
+      try {
+        const r = await fetch(`/api/social/facebook/${slug}`, { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) alert('Posted to Facebook! ' + (d.url||''));
+        else      alert('Facebook error: ' + d.error);
+      } catch(e) { alert('Error: ' + e); }
+      this.$set(this.socialPosting, slug+'_fb', false);
+    },
+
+    async postTikTokAll() {
+      this.ttPosting = true;
+      try {
+        const r = await fetch('/api/social/tiktok-all', { method: 'POST' });
+        const d = await r.json();
+        alert(`TikTok: queued ${d.count} video(s)`);
+      } catch(e) { alert('Error: ' + e); }
+      this.ttPosting = false;
+    },
+
+    async postFacebookAll() {
+      this.fbPosting = true;
+      try {
+        const r = await fetch('/api/social/facebook-all', { method: 'POST' });
+        const d = await r.json();
+        alert(`Facebook: queued ${d.count} video(s)`);
+      } catch(e) { alert('Error: ' + e); }
+      this.fbPosting = false;
+    },
+
+    // ── Shorts Analytics ────────────────────────────────────────────────────────
+    async loadShortsAnalytics() {
+      this.loadingShortsAnalytics = true;
+      try {
+        const r = await fetch('/api/analytics/shorts');
+        const d = await r.json();
+        if (d.error) {
+          console.error('[Shorts analytics]', d.error);
+        }
+        this.shortsAnalytics        = d.shorts  || [];
+        this.shortsAnalyticsSummary = d.summary || null;
+      } catch(e) {
+        console.error('[Shorts analytics error]', e);
+        this.shortsAnalytics = [];
+      }
+      this.loadingShortsAnalytics = false;
+    },
+
+    async toggleAutoLearn() {
+      const next = !this.agentData.auto_learn;
+      await fetch('/api/agent/settings', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ auto_learn: next }),
+      });
+      this.agentData.auto_learn = next;
+    },
+
+    async setLearnInterval(hours) {
+      await fetch('/api/agent/settings', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ interval_hours: hours }),
+      });
+      this.agentData.interval_hours = hours;
+    },
+
+    async toggleAutoAnalyzeGoals() {
+      const next = !this.agentData.auto_analyze_goals;
+      await fetch('/api/agent/settings', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ auto_analyze_goals: next }),
+      });
+      this.agentData.auto_analyze_goals = next;
+    },
+
+    agentTimeAgo(isoStr, isFuture = false) {
+      if (!isoStr) return '—';
+      const diff = Math.abs(Date.now() - new Date(isoStr + 'Z').getTime());
+      const m = Math.floor(diff / 60000);
+      if (m < 1)  return isFuture ? 'in <1m' : 'just now';
+      if (m < 60) return isFuture ? `in ${m}m` : `${m}m ago`;
+      const h = Math.floor(m / 60);
+      if (h < 24) return isFuture ? `in ${h}h ${m%60}m` : `${h}h ago`;
+      return isFuture ? `in ${Math.floor(h/24)}d` : `${Math.floor(h/24)}d ago`;
+    },
+
+    // ── Cost Analysis ──────────────────────────────────────────────────
+    async loadCosts() {
+      this.costLoading = true;
+      try {
+        const [rs, rh] = await Promise.all([
+          fetch('/api/costs'),
+          fetch('/api/costs/history'),
+        ]);
+        this.costSummary = await rs.json();
+        const hd = await rh.json();
+        this.costHistory = hd.history || [];
+        this.costBudget  = this.costSummary.monthly_budget_usd ?? this.costBudget ?? 50;
+      } catch(_) {}
+      this.costLoading = false;
+    },
+
+    async backfillCosts() {
+      this.costBackfilling = true;
+      try {
+        const r = await fetch('/api/costs/backfill', { method: 'POST' });
+        const d = await r.json();
+        this.costSummary = d.summary;
+        await this.loadCosts();
+        await this.loadCostDaily();
+      } catch(_) {}
+      this.costBackfilling = false;
+    },
+
+    async loadCostPerVideo() {
+      this.costPerVideoLoading = true;
+      try {
+        const r = await fetch('/api/costs/per-video');
+        const d = await r.json();
+        this.costPerVideo = d.videos || [];
+      } catch(_) {}
+      this.costPerVideoLoading = false;
+    },
+
+    async loadCostDaily() {
+      try {
+        const r = await fetch('/api/costs/daily?days=30');
+        const d = await r.json();
+        this.costDaily = d.daily || [];
+      } catch(_) {}
+    },
+
+    async loadCostRoi() {
+      try {
+        const r = await fetch('/api/analytics/per-video');
+        const d = await r.json();
+        const totalViews = (d.videos||[]).reduce((s,v)=>s+(v.views||0),0);
+        const totalCost  = this.costSummary.total_cost_usd || 0;
+        this.costRoiTotalViews  = totalViews;
+        this.costRoiCostPerView = totalViews > 0 ? totalCost / totalViews : null;
+        this.costRoiEstRevenue  = totalViews * 0.003;  // $3 CPM
+        this.costRoiRatio       = totalCost > 0 && this.costRoiEstRevenue > 0
+                                   ? this.costRoiEstRevenue / totalCost : null;
+      } catch(_) {}
+    },
+
+    async saveCostBudget() {
+      try {
+        await fetch('/api/costs/budget', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ monthly_budget_usd: this.costBudget }),
+        });
+      } catch(_) {}
+    },
+
     // ── Channel settings ───────────────────────────────────────────────
     async loadChannelSettings() {
       try {
@@ -3011,6 +5536,7 @@ function dash() {
         this.csReplyMax          = d.auto_reply_max_per_video ?? 5;
         this.csReplyTone         = d.auto_reply_tone       || 'friendly';
         this.csAutoReplyOnUpload = d.auto_reply_on_upload  ?? true;
+        if (d.monthly_budget_usd) this.costBudget = d.monthly_budget_usd;
       } catch(_) {}
     },
 
@@ -3158,10 +5684,28 @@ function dash() {
         return;
       }
       if (msg.type === 'thumbnail_done') {
-        // Force browser to reload the thumbnail by busting cache
         document.querySelectorAll(`img[src*="${msg.slug}/thumbnail"]`).forEach(img => {
           img.src = img.src.split('?')[0] + '?t=' + Date.now();
         });
+        return;
+      }
+      if (msg.type === 'goals_update') {
+        this.goalsData = msg.goals;
+        return;
+      }
+      if (msg.type === 'goal_completed') {
+        this.goalsData = msg.goals;
+        // Flash notification
+        this.logs.unshift({ level:'INFO', ts: new Date().toISOString(),
+          clean: '🎯 Goal completed: ' + msg.goal.title });
+        return;
+      }
+      if (msg.type === 'agent_updated') {
+        this.agentData = { ...this.agentData, ...msg };
+        return;
+      }
+      if (msg.type === 'agent_status') {
+        this.agentData = { ...this.agentData, ...msg };
         return;
       }
       if (msg.type === 'pipeline_start') {

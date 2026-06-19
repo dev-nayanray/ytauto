@@ -143,6 +143,16 @@ def notify_daily_summary(stats: dict) -> None:
     )
 
 
+def notify_goal_complete(goal_title: str, target: float, unit: str) -> None:
+    """Notify when a goal is completed."""
+    send(
+        f"🎯 <b>Goal Achieved!</b>\n\n"
+        f"<b>{goal_title}</b>\n"
+        f"Target: <b>{target:,.0f} {unit}</b> ✅\n\n"
+        f"Great work — set a new goal to keep growing! 🚀"
+    )
+
+
 def notify_milestone(title: str, views: int, milestone: int, video_id: str) -> None:
     """Notify when a video reaches a view milestone."""
     emoji = "🏆" if milestone >= 10000 else "🎉" if milestone >= 1000 else "🌱"

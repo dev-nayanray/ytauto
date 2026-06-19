@@ -1,0 +1,474 @@
+{
+  "videos": {
+    "python_automation_for_non-programmers_step_by_step": {
+      "slug": "python_automation_for_non-programmers_step_by_step",
+      "keyword": "python automation for non-programmers step by step",
+      "views": 4,
+      "likes": 0,
+      "comments": 0,
+      "duration_s": 348,
+      "upload_date": "2026-06-18",
+      "script_words": 1102,
+      "thumbnail_style": -1,
+      "engagement_rate": 0.0,
+      "recorded_at": "2026-06-19T10:00:15.492400",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "machine_learning_tutorial": {
+      "slug": "machine_learning_tutorial",
+      "keyword": "machine learning tutorial",
+      "views": 2,
+      "likes": 1,
+      "comments": 0,
+      "duration_s": 601,
+      "upload_date": "2026-06-18",
+      "script_words": 1828,
+      "thumbnail_style": -1,
+      "engagement_rate": 0.5,
+      "recorded_at": "2026-06-19T10:00:15.495401",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "machine_learning_explained_in_plain_english": {
+      "slug": "machine_learning_explained_in_plain_english",
+      "keyword": "machine learning explained in plain english",
+      "views": 2,
+      "likes": 1,
+      "comments": 0,
+      "duration_s": 351,
+      "upload_date": "2026-06-18",
+      "script_words": 1076,
+      "thumbnail_style": -1,
+      "engagement_rate": 0.5,
+      "recorded_at": "2026-06-19T10:00:15.496406",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "how_to_use_ai_to_automate_your_daily_tasks": {
+      "slug": "how_to_use_ai_to_automate_your_daily_tasks",
+      "keyword": "how to use ai to automate your daily tasks",
+      "views": 2,
+      "likes": 0,
+      "comments": 0,
+      "duration_s": 332,
+      "upload_date": "2026-06-18",
+      "script_words": 1079,
+      "thumbnail_style": -1,
+      "engagement_rate": 0.0,
+      "recorded_at": "2026-06-19T10:00:15.497437",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "gop_artificial_intelligence_regulation_debate": {
+      "slug": "gop_artificial_intelligence_regulation_debate",
+      "keyword": "gop artificial intelligence regulation debate",
+      "views": 1,
+      "likes": 0,
+      "comments": 0,
+      "duration_s": 361,
+      "upload_date": "2026-06-18",
+      "script_words": 1118,
+      "thumbnail_style": -1,
+      "engagement_rate": 0.0,
+      "recorded_at": "2026-06-19T10:00:15.498191",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "chatgpt_tips_and_tricks": {
+      "slug": "chatgpt_tips_and_tricks",
+      "keyword": "chatgpt tips and tricks",
+      "views": 2,
+      "likes": 1,
+      "comments": 0,
+      "duration_s": 626,
+      "upload_date": "2026-06-18",
+      "script_words": 1866,
+      "thumbnail_style": -1,
+      "engagement_rate": 0.5,
+      "recorded_at": "2026-06-19T10:00:15.498941",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "best_free_ai_tools_for_beginners_in_2025": {
+      "slug": "best_free_ai_tools_for_beginners_in_2025",
+      "keyword": "best free ai tools for beginners in 2025",
+      "views": 0,
+      "likes": 0,
+      "comments": 0,
+      "duration_s": 353,
+      "upload_date": "2026-06-18",
+      "script_words": 1102,
+      "thumbnail_style": -1,
+      "engagement_rate": 0.0,
+      "recorded_at": "2026-06-19T10:00:15.499691",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "best_ai_tools_to_make_money_online_in_2025": {
+      "slug": "best_ai_tools_to_make_money_online_in_2025",
+      "keyword": "best ai tools to make money online in 2025",
+      "views": 2,
+      "likes": 2,
+      "comments": 1,
+      "duration_s": 616,
+      "upload_date": "2026-06-18",
+      "script_words": 1890,
+      "thumbnail_style": -1,
+      "engagement_rate": 1.5,
+      "recorded_at": "2026-06-19T10:00:15.500444",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "artificial_intelligence_paragraph": {
+      "slug": "artificial_intelligence_paragraph",
+      "keyword": "artificial intelligence paragraph",
+      "views": 1,
+      "likes": 1,
+      "comments": 0,
+      "duration_s": 675,
+      "upload_date": "2026-06-18",
+      "script_words": 1928,
+      "thumbnail_style": -1,
+      "engagement_rate": 1.0,
+      "recorded_at": "2026-06-19T10:00:15.501192",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "artificial_intelligence": {
+      "slug": "artificial_intelligence",
+      "keyword": "artificial intelligence",
+      "views": 3,
+      "likes": 1,
+      "comments": 1,
+      "duration_s": 543,
+      "upload_date": "2026-06-18",
+      "script_words": 1736,
+      "thumbnail_style": -1,
+      "engagement_rate": 0.6667,
+      "recorded_at": "2026-06-19T10:00:15.501941",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "ai_tools_for_video_creation": {
+      "slug": "ai_tools_for_video_creation",
+      "keyword": "ai tools for video creation",
+      "views": 4,
+      "likes": 1,
+      "comments": 0,
+      "duration_s": 630,
+      "upload_date": "2026-06-18",
+      "script_words": 2088,
+      "thumbnail_style": -1,
+      "engagement_rate": 0.25,
+      "recorded_at": "2026-06-19T10:00:15.503440",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "ai_tools_cyberattack_sophistication": {
+      "slug": "ai_tools_cyberattack_sophistication",
+      "keyword": "ai tools cyberattack sophistication",
+      "views": 1,
+      "likes": 1,
+      "comments": 0,
+      "duration_s": 392,
+      "upload_date": "2026-06-18",
+      "script_words": 1185,
+      "thumbnail_style": -1,
+      "engagement_rate": 1.0,
+      "recorded_at": "2026-06-19T10:00:15.504191",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "python_automation_bot": {
+      "slug": "python_automation_bot",
+      "keyword": "python automation bot",
+      "views": 1,
+      "likes": 1,
+      "comments": 0,
+      "duration_s": 657,
+      "upload_date": "2026-06-18",
+      "script_words": 1892,
+      "thumbnail_style": -1,
+      "engagement_rate": 1.0,
+      "recorded_at": "2026-06-19T10:00:15.493901",
+      "upload_hour": 0,
+      "upload_day": "Thursday"
+    },
+    "ai_productivity_tools": {
+      "slug": "ai_productivity_tools",
+      "keyword": "ai productivity tools",
+      "views": 0,
+      "likes": 0,
+      "comments": 0,
+      "duration_s": 613,
+      "upload_date": "2026-06-19",
+      "script_words": 1882,
+      "thumbnail_style": -1,
+      "engagement_rate": 0.0,
+      "recorded_at": "2026-06-19T10:00:15.504941",
+      "upload_hour": 0,
+      "upload_day": "Friday"
+    },
+    "one_company_paid_500_000_000_for_ai_in_one_month": {
+      "slug": "one_company_paid_500_000_000_for_ai_in_one_month",
+      "keyword": "one company paid 500 000 000 for ai in one month",
+      "views": 1,
+      "likes": 1,
+      "comments": 0,
+      "duration_s": 640,
+      "upload_date": "2026-06-19",
+      "script_words": 1958,
+      "thumbnail_style": -1,
+      "engagement_rate": 1.0,
+      "recorded_at": "2026-06-19T10:00:15.494652",
+      "upload_hour": 0,
+      "upload_day": "Friday"
+    }
+  },
+  "topic_scores": {
+    "python": {
+      "avg_views": 2,
+      "max_views": 4,
+      "count": 2,
+      "total_views": 5
+    },
+    "automation": {
+      "avg_views": 2,
+      "max_views": 4,
+      "count": 2,
+      "total_views": 5
+    },
+    "non": {
+      "avg_views": 4,
+      "max_views": 4,
+      "count": 1,
+      "total_views": 4
+    },
+    "programmers": {
+      "avg_views": 4,
+      "max_views": 4,
+      "count": 1,
+      "total_views": 4
+    },
+    "step": {
+      "avg_views": 4,
+      "max_views": 4,
+      "count": 1,
+      "total_views": 4
+    },
+    "machine": {
+      "avg_views": 2,
+      "max_views": 2,
+      "count": 2,
+      "total_views": 4
+    },
+    "learning": {
+      "avg_views": 2,
+      "max_views": 2,
+      "count": 2,
+      "total_views": 4
+    },
+    "plain": {
+      "avg_views": 2,
+      "max_views": 2,
+      "count": 1,
+      "total_views": 2
+    },
+    "english": {
+      "avg_views": 2,
+      "max_views": 2,
+      "count": 1,
+      "total_views": 2
+    },
+    "automate": {
+      "avg_views": 2,
+      "max_views": 2,
+      "count": 1,
+      "total_views": 2
+    },
+    "daily": {
+      "avg_views": 2,
+      "max_views": 2,
+      "count": 1,
+      "total_views": 2
+    },
+    "tasks": {
+      "avg_views": 2,
+      "max_views": 2,
+      "count": 1,
+      "total_views": 2
+    },
+    "gop": {
+      "avg_views": 1,
+      "max_views": 1,
+      "count": 1,
+      "total_views": 1
+    },
+    "artificial": {
+      "avg_views": 2,
+      "max_views": 3,
+      "count": 3,
+      "total_views": 5
+    },
+    "intelligence": {
+      "avg_views": 2,
+      "max_views": 3,
+      "count": 3,
+      "total_views": 5
+    },
+    "regulation": {
+      "avg_views": 1,
+      "max_views": 1,
+      "count": 1,
+      "total_views": 1
+    },
+    "debate": {
+      "avg_views": 1,
+      "max_views": 1,
+      "count": 1,
+      "total_views": 1
+    },
+    "chatgpt": {
+      "avg_views": 2,
+      "max_views": 2,
+      "count": 1,
+      "total_views": 2
+    },
+    "tips": {
+      "avg_views": 2,
+      "max_views": 2,
+      "count": 1,
+      "total_views": 2
+    },
+    "tricks": {
+      "avg_views": 2,
+      "max_views": 2,
+      "count": 1,
+      "total_views": 2
+    },
+    "tools": {
+      "avg_views": 1,
+      "max_views": 4,
+      "count": 5,
+      "total_views": 7
+    },
+    "money": {
+      "avg_views": 2,
+      "max_views": 2,
+      "count": 1,
+      "total_views": 2
+    },
+    "online": {
+      "avg_views": 2,
+      "max_views": 2,
+      "count": 1,
+      "total_views": 2
+    },
+    "paragraph": {
+      "avg_views": 1,
+      "max_views": 1,
+      "count": 1,
+      "total_views": 1
+    },
+    "video": {
+      "avg_views": 4,
+      "max_views": 4,
+      "count": 1,
+      "total_views": 4
+    },
+    "creation": {
+      "avg_views": 4,
+      "max_views": 4,
+      "count": 1,
+      "total_views": 4
+    },
+    "cyberattack": {
+      "avg_views": 1,
+      "max_views": 1,
+      "count": 1,
+      "total_views": 1
+    },
+    "sophistication": {
+      "avg_views": 1,
+      "max_views": 1,
+      "count": 1,
+      "total_views": 1
+    },
+    "bot": {
+      "avg_views": 1,
+      "max_views": 1,
+      "count": 1,
+      "total_views": 1
+    },
+    "productivity": {
+      "avg_views": 0,
+      "max_views": 0,
+      "count": 1,
+      "total_views": 0
+    },
+    "one": {
+      "avg_views": 1,
+      "max_views": 1,
+      "count": 2,
+      "total_views": 2
+    },
+    "company": {
+      "avg_views": 1,
+      "max_views": 1,
+      "count": 1,
+      "total_views": 1
+    },
+    "paid": {
+      "avg_views": 1,
+      "max_views": 1,
+      "count": 1,
+      "total_views": 1
+    },
+    "month": {
+      "avg_views": 1,
+      "max_views": 1,
+      "count": 1,
+      "total_views": 1
+    }
+  },
+  "insights": {
+    "total_videos": 15,
+    "avg_views": 2,
+    "max_views": 4,
+    "total_views": 26,
+    "avg_likes": 1,
+    "avg_engagement": 0.5278,
+    "best_upload_day": "Thursday",
+    "best_day_avg_views": 2,
+    "best_script_length": "long(>1400)",
+    "top_videos": [
+      {
+        "slug": "python_automation_for_non-programmers_step_by_step",
+        "keyword": "python automation for non-programmers step by step",
+        "views": 4
+      },
+      {
+        "slug": "ai_tools_for_video_creation",
+        "keyword": "ai tools for video creation",
+        "views": 4
+      },
+      {
+        "slug": "artificial_intelligence",
+        "keyword": "artificial intelligence",
+        "views": 3
+      },
+      {
+        "slug": "machine_learning_tutorial",
+        "keyword": "machine learning tutorial",
+        "views": 2
+      },
+      {
+        "slug": "machine_learning_explained_in_plain_english",
+        "keyword": "machine learning explained in plain english",
+        "views": 2
+      }
+    ]
+  },
+  "updated_at": "2026-06-19T10:00:15.504941"
+}

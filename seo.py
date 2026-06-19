@@ -104,6 +104,19 @@ Exactly 3 hashtags. Capitalise each word. Format: #AITools #HowTo #MachineLearni
         messages=[{"role": "user", "content": prompt}],
     )
 
+    try:
+        from cost_tracker import log_usage
+        log_usage(
+            stage="seo",
+            model=CLAUDE_MODEL,
+            input_tokens=message.usage.input_tokens,
+            output_tokens=message.usage.output_tokens,
+            slug=output_path.parent.name,
+            keyword=keyword,
+        )
+    except Exception:
+        pass
+
     raw = message.content[0].text.strip()
     data = _parse_json(raw, keyword)
     data = _enforce_limits(data)

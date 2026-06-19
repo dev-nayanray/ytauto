@@ -34,6 +34,8 @@ DEFAULTS: dict[str, Any] = {
     # Short generation config
     "auto_short_on_upload":     False,
     "short_hook_style":         "question",  # question | statistic | bold-claim
+    # Cost budget
+    "monthly_budget_usd":       50.0,
 }
 
 

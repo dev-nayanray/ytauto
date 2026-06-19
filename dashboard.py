@@ -60,6 +60,8 @@ async def lifespan(app_: FastAPI):  # type: ignore[override]
         asyncio.create_task(_start_telegram_listener()),
         asyncio.create_task(_scheduler_loop()),
         asyncio.create_task(_milestone_checker_loop()),
+        asyncio.create_task(_goal_checker_loop()),
+        asyncio.create_task(_agent_auto_learn_loop()),
     ]
     yield
     for t in tasks:
@@ -353,9 +355,150 @@ async def get_youtube_analytics() -> JSONResponse:
     try:
         data = await asyncio.to_thread(_fetch_full_analytics)
         _cached_analytics = {"connected": True, **data}
+        asyncio.create_task(_agent_learn_task())
+        asyncio.create_task(asyncio.to_thread(_run_goal_check))
         return JSONResponse(_cached_analytics)
     except Exception as exc:
         return JSONResponse({"connected": False, "reason": str(exc)})
+
+
+@app.post("/api/sync-all")
+async def sync_all() -> JSONResponse:
+    """
+    Full sync in one shot:
+      1. Fetch YouTube Analytics (OAuth) → populate _cached_analytics
+      2. Run goal check with real stats (watch hours, subs, views)
+      3. Run agent learn (YouTube Data API) → sync per-video stats
+    Returns combined result so the dashboard can update everything at once.
+    """
+    global _cached_analytics
+    result: dict = {
+        "analytics_ok":     False,
+        "goals_updated":    0,
+        "goals_completed":  0,
+        "videos_learned":   0,
+        "errors":           [],
+    }
+
+    await _broadcast({"type": "log", "level": "INFO",
+                      "text": "🔄 Sync All: fetching real YouTube data…"})
+
+    # ── 1. YouTube Analytics ─────────────────────────────────────────────────
+    if YOUTUBE_TOKEN_FILE.exists():
+        try:
+            data = await asyncio.to_thread(_fetch_full_analytics)
+            _cached_analytics = {"connected": True, **data}
+            result["analytics_ok"] = True
+            await _broadcast({"type": "log", "level": "INFO",
+                              "text": "✅ Analytics: fetched channel + video stats"})
+        except Exception as exc:
+            result["errors"].append(f"analytics: {exc}")
+            await _broadcast({"type": "log", "level": "WARN",
+                              "text": f"⚠ Analytics failed: {exc}"})
+    else:
+        result["errors"].append("analytics: no YouTube token")
+
+    # ── 2. Goal check with real stats ────────────────────────────────────────
+    try:
+        newly = await asyncio.to_thread(_run_goal_check)
+        gs    = _goals.get_summary()
+        result["goals_updated"]   = gs["total"]
+        result["goals_completed"] = len(newly)
+        await _broadcast({"type": "goals_update", "goals": gs})
+        if newly:
+            await _broadcast({"type": "log", "level": "INFO",
+                              "text": f"🎯 {len(newly)} goal(s) completed!"})
+    except Exception as exc:
+        result["errors"].append(f"goals: {exc}")
+
+    # ── 3. Agent learn from YouTube Data API ─────────────────────────────────
+    try:
+        from config import YOUTUBE_API_KEY as _yk
+        if _yk:
+            from googleapiclient.discovery import build
+            vids     = _scan_videos()
+            uploaded = [(v["slug"], v["video_id"]) for v in vids if v.get("video_id")]
+            if uploaded:
+                yt     = build("youtube", "v3", developerKey=_yk)
+                id_map = {vid_id: slug for slug, vid_id in uploaded}
+                records: list = []
+                for i in range(0, len(id_map), 50):
+                    batch     = list(id_map.keys())[i:i+50]
+                    resp      = await asyncio.to_thread(
+                        lambda b=batch: yt.videos().list(
+                            part="statistics,snippet,contentDetails", id=",".join(b)
+                        ).execute()
+                    )
+                    for item in resp.get("items", []):
+                        vid_id = item["id"]
+                        slug   = id_map.get(vid_id, "")
+                        s      = item.get("statistics", {})
+                        pub    = item["snippet"].get("publishedAt", "")[:10]
+                        dur    = _parse_iso_duration(
+                            item.get("contentDetails", {}).get("duration", ""))
+                        sw     = 0
+                        sp     = OUTPUT_DIR / slug / "script.txt"
+                        if sp.exists():
+                            try:
+                                sw = len(sp.read_text(encoding="utf-8").split())
+                            except Exception:
+                                pass
+                        records.append({
+                            "slug": slug,
+                            "keyword": slug.replace("_", " "),
+                            "views":     int(s.get("viewCount", 0)),
+                            "likes":     int(s.get("likeCount", 0)),
+                            "comments":  int(s.get("commentCount", 0)),
+                            "duration_s": dur,
+                            "upload_date": pub,
+                            "script_words": sw,
+                        })
+                count = await asyncio.to_thread(_agent.record_batch, records)
+                result["videos_learned"] = count
+
+                # Update agent settings last_learn_at
+                import datetime as _dt
+                cfg = _agent_settings_load()
+                cfg["last_learn_at"] = _dt.datetime.utcnow().isoformat()
+                cfg["next_learn_at"] = (
+                    _dt.datetime.utcnow() +
+                    _dt.timedelta(hours=cfg.get("interval_hours", 6))
+                ).isoformat()
+                cfg["last_learn_count"] = count
+                _agent_settings_save(cfg)
+
+                ins  = _agent.get_insights()
+                recs = _agent.get_recommendations()
+                await _broadcast({"type": "agent_updated",
+                                  "insights": ins, "recommendations": recs,
+                                  "memory_size": len(_agent.get_all().get("videos", {}))})
+                await _broadcast({
+                    "type": "agent_status",
+                    "last_learn_at":  cfg["last_learn_at"],
+                    "next_learn_at":  cfg["next_learn_at"],
+                    "interval_hours": cfg.get("interval_hours", 6),
+                    "auto_learn":     cfg.get("auto_learn", True),
+                })
+                await _broadcast({"type": "log", "level": "INFO",
+                                  "text": f"🤖 Agent: learned from {count} real YouTube videos"})
+    except Exception as exc:
+        result["errors"].append(f"agent_learn: {exc}")
+        await _broadcast({"type": "log", "level": "WARN",
+                          "text": f"⚠ Agent learn: {exc}"})
+
+    result["goals"]  = _goals.get_summary()
+    result["agent"]  = {
+        "insights":        _agent.get_insights(),
+        "top_topics":      _agent.get_top_topics(10),
+        "recommendations": _agent.get_recommendations(5),
+        "memory_size":     len(_agent.get_all().get("videos", {})),
+        **_agent_settings_load(),
+    }
+
+    await _broadcast({"type": "log", "level": "INFO",
+                      "text": f"✅ Sync complete — {result['videos_learned']} videos, "
+                              f"{result['goals_completed']} goals completed"})
+    return JSONResponse(result)
 
 
 def _fetch_full_analytics() -> dict:
@@ -383,22 +526,43 @@ def _fetch_full_analytics() -> dict:
         "hidden_subs": bool(stats.get("hiddenSubscriberCount", False)),
     }
 
-    # YouTube Analytics API — impressions, CTR, watch time (last 28 days)
+    # YouTube Analytics API — watch time, CTR, views (last 28 days)
+    # NOTE: "impressions" and "impressionClickThroughRate" are only available
+    # for monetized/partnered channels via the advanced reporting scope.
+    # We request them in a separate optional call so a failure doesn't block
+    # the core metrics.
     channel_analytics: dict = {}
     try:
         creds = Credentials.from_authorized_user_file(str(YOUTUBE_TOKEN_FILE), SCOPES)
         ya = build("youtubeAnalytics", "v2", credentials=creds)
         end_date   = date.today()
         start_date = end_date - timedelta(days=28)
+
+        # Core metrics — always available
         ya_resp = ya.reports().query(
             ids="channel==MINE",
             startDate=start_date.isoformat(),
             endDate=end_date.isoformat(),
-            metrics="views,estimatedMinutesWatched,averageViewDuration,impressions,impressionClickThroughRate,subscribersGained",
+            metrics="views,estimatedMinutesWatched,averageViewDuration,subscribersGained",
         ).execute()
         if ya_resp.get("rows"):
             headers = [h["name"] for h in ya_resp["columnHeaders"]]
             channel_analytics = dict(zip(headers, ya_resp["rows"][0]))
+
+        # Optional impression metrics (only available for YPP channels)
+        try:
+            ya_imp = ya.reports().query(
+                ids="channel==MINE",
+                startDate=start_date.isoformat(),
+                endDate=end_date.isoformat(),
+                metrics="impressions,impressionClickThroughRate",
+            ).execute()
+            if ya_imp.get("rows"):
+                imp_headers = [h["name"] for h in ya_imp["columnHeaders"]]
+                channel_analytics.update(dict(zip(imp_headers, ya_imp["rows"][0])))
+        except Exception:
+            pass  # Not a YPP channel yet — impressions not available
+
     except Exception as exc:
         _log.getLogger(__name__).warning(f"YouTube Analytics API: {exc}")
 
@@ -954,6 +1118,10 @@ async def _pipeline_task(count: int, dry_run: bool) -> None:
             "exit_code": proc.returncode,
             "videos":    vids,
         })
+        # Auto-learn from newly uploaded videos after pipeline completes
+        if proc.returncode == 0:
+            asyncio.create_task(_agent_learn_task())
+
         # Daily Telegram summary after any completed run
         try:
             from telegram_bot import notify_daily_summary
@@ -1129,6 +1297,138 @@ async def bulk_reply_all() -> JSONResponse:
     return JSONResponse({"status": "started", "count": len(uploaded)})
 
 
+# ── Social Media (TikTok + Facebook) ─────────────────────────────────────────
+
+@app.get("/api/social/status")
+async def social_status() -> JSONResponse:
+    """Check TikTok and Facebook connection status."""
+    from social_post import tiktok_check_credentials, facebook_check_credentials
+    tt = await asyncio.to_thread(tiktok_check_credentials)
+    fb = await asyncio.to_thread(facebook_check_credentials)
+    return JSONResponse({"tiktok": tt, "facebook": fb})
+
+
+@app.post("/api/social/tiktok/{slug}")
+async def post_tiktok(slug: str) -> JSONResponse:
+    """Upload a video (or short if exists) to TikTok."""
+    from social_post import tiktok_upload_video
+    video_dir = OUTPUT_DIR / slug
+    # Prefer the short (vertical) for TikTok
+    short_path = video_dir / "short" / "video.mp4"
+    main_path  = video_dir / "video.mp4"
+    video_path = short_path if short_path.exists() else main_path
+    if not video_path.exists():
+        return JSONResponse({"ok": False, "error": "No video found for this slug"}, status_code=404)
+
+    seo: dict = {}
+    seo_file = video_dir / "seo.json"
+    if seo_file.exists():
+        try: seo = json.loads(seo_file.read_text(encoding="utf-8"))
+        except Exception: pass
+
+    title = seo.get("title") or slug.replace("_", " ").title()
+    tags  = seo.get("tags", [])
+
+    result = await asyncio.to_thread(tiktok_upload_video, video_path, title, tags)
+
+    if result.get("ok"):
+        (video_dir / "tiktok_id.txt").write_text(result.get("publish_id", ""), encoding="utf-8")
+        await _broadcast({"type": "tiktok_posted", "slug": slug, "publish_id": result.get("publish_id")})
+
+    return JSONResponse(result)
+
+
+@app.post("/api/social/facebook/{slug}")
+async def post_facebook(slug: str) -> JSONResponse:
+    """Upload a video to the Facebook Page."""
+    from social_post import facebook_post_video
+    video_dir = OUTPUT_DIR / slug
+    video_path = video_dir / "video.mp4"
+    if not video_path.exists():
+        return JSONResponse({"ok": False, "error": "No video found for this slug"}, status_code=404)
+
+    seo: dict = {}
+    seo_file = video_dir / "seo.json"
+    if seo_file.exists():
+        try: seo = json.loads(seo_file.read_text(encoding="utf-8"))
+        except Exception: pass
+
+    title       = seo.get("title") or slug.replace("_", " ").title()
+    description = seo.get("description", "")[:500]
+    tags        = seo.get("tags", [])
+
+    result = await asyncio.to_thread(facebook_post_video, video_path, title, description, tags)
+
+    if result.get("ok"):
+        (video_dir / "facebook_id.txt").write_text(result.get("video_id", ""), encoding="utf-8")
+        await _broadcast({"type": "facebook_posted", "slug": slug, "video_id": result.get("video_id")})
+
+    return JSONResponse(result)
+
+
+@app.post("/api/social/tiktok-all")
+async def post_tiktok_all() -> JSONResponse:
+    """Queue TikTok upload for all uploaded videos."""
+    uploaded = [v for v in _scan_videos() if v.get("video_id")]
+    if not uploaded:
+        return JSONResponse({"status": "nothing_to_do", "count": 0})
+    for v in uploaded:
+        asyncio.create_task(_post_tiktok_task(v["slug"]))
+    return JSONResponse({"status": "started", "count": len(uploaded)})
+
+
+@app.post("/api/social/facebook-all")
+async def post_facebook_all() -> JSONResponse:
+    """Queue Facebook upload for all uploaded videos."""
+    uploaded = [v for v in _scan_videos() if v.get("video_id")]
+    if not uploaded:
+        return JSONResponse({"status": "nothing_to_do", "count": 0})
+    for v in uploaded:
+        asyncio.create_task(_post_facebook_task(v["slug"]))
+    return JSONResponse({"status": "started", "count": len(uploaded)})
+
+
+async def _post_tiktok_task(slug: str) -> None:
+    from social_post import tiktok_upload_video
+    video_dir  = OUTPUT_DIR / slug
+    short_path = video_dir / "short" / "video.mp4"
+    main_path  = video_dir / "video.mp4"
+    video_path = short_path if short_path.exists() else main_path
+    if not video_path.exists():
+        return
+    seo: dict = {}
+    seo_file = video_dir / "seo.json"
+    if seo_file.exists():
+        try: seo = json.loads(seo_file.read_text(encoding="utf-8"))
+        except Exception: pass
+    title = seo.get("title") or slug.replace("_", " ").title()
+    tags  = seo.get("tags", [])
+    result = await asyncio.to_thread(tiktok_upload_video, video_path, title, tags)
+    if result.get("ok"):
+        (video_dir / "tiktok_id.txt").write_text(result.get("publish_id", ""), encoding="utf-8")
+    await _broadcast({"type": "tiktok_posted", "slug": slug, **result})
+
+
+async def _post_facebook_task(slug: str) -> None:
+    from social_post import facebook_post_video
+    video_dir  = OUTPUT_DIR / slug
+    video_path = video_dir / "video.mp4"
+    if not video_path.exists():
+        return
+    seo: dict = {}
+    seo_file = video_dir / "seo.json"
+    if seo_file.exists():
+        try: seo = json.loads(seo_file.read_text(encoding="utf-8"))
+        except Exception: pass
+    title       = seo.get("title") or slug.replace("_", " ").title()
+    description = seo.get("description", "")[:500]
+    tags        = seo.get("tags", [])
+    result = await asyncio.to_thread(facebook_post_video, video_path, title, description, tags)
+    if result.get("ok"):
+        (video_dir / "facebook_id.txt").write_text(result.get("video_id", ""), encoding="utf-8")
+    await _broadcast({"type": "facebook_posted", "slug": slug, **result})
+
+
 @app.get("/api/video/{slug}/detail")
 async def video_detail(slug: str) -> JSONResponse:
     """Return full metadata for a single video: SEO, script preview, stats."""
@@ -1227,6 +1527,29 @@ async def trigger_keyword_research() -> JSONResponse:
     return JSONResponse({"status": "started"})
 
 
+@app.get("/api/research/preview")
+async def research_preview() -> JSONResponse:
+    """Return a fresh set of keyword ideas without adding them to the queue."""
+    try:
+        from research import get_trending_keywords
+        keywords = await asyncio.to_thread(get_trending_keywords, 10)
+        # Don't mark as used — this is just a preview
+        return JSONResponse({"keywords": keywords, "count": len(keywords)})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc), "keywords": []}, status_code=500)
+
+
+@app.get("/api/research/used")
+async def get_used_keywords() -> JSONResponse:
+    """Return the rolling used-keyword log."""
+    try:
+        from research import _load_used
+        used = _load_used()
+        return JSONResponse({"count": len(used), "used": used})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 async def _research_task() -> None:
     await _task_start("research", "research", "", "Running keyword research…")
     await _broadcast({"type": "log", "level": "INFO",
@@ -1295,6 +1618,11 @@ async def _regen_thumbnail_task(slug: str, video_dir: Path) -> None:
 
 _MILESTONES   = [100, 500, 1000, 5000, 10000, 50000, 100_000]
 _MILESTONE_FILE = BASE / "milestones.json"
+
+# ── Goal + Agent memory init ──────────────────────────────────────────────────
+import goals as _goals
+import agent_memory as _agent
+_goals.seed_default_goals()   # creates starter goals on first launch
 
 
 async def _milestone_checker_loop() -> None:
@@ -1373,6 +1701,184 @@ async def get_milestones() -> JSONResponse:
     return JSONResponse({"milestones": history})
 
 
+# ── API Cost tracking ─────────────────────────────────────────────────────────
+
+@app.get("/api/costs")
+async def get_costs() -> JSONResponse:
+    import cost_tracker
+    return JSONResponse(cost_tracker.get_summary())
+
+
+@app.get("/api/costs/history")
+async def get_costs_history() -> JSONResponse:
+    import cost_tracker
+    return JSONResponse({"history": cost_tracker.get_all()})
+
+
+@app.get("/api/costs/per-video")
+async def get_costs_per_video() -> JSONResponse:
+    import cost_tracker
+    return JSONResponse({"videos": cost_tracker.get_per_video()})
+
+
+@app.get("/api/costs/daily")
+async def get_costs_daily(days: int = 30) -> JSONResponse:
+    import cost_tracker
+    return JSONResponse({"daily": cost_tracker.get_daily_totals(days)})
+
+
+@app.post("/api/costs/backfill")
+async def backfill_costs() -> JSONResponse:
+    """Estimate and insert cost entries for existing videos that have no log yet."""
+    import cost_tracker
+    from config import CLAUDE_MODEL
+    inserted = await asyncio.to_thread(
+        cost_tracker.backfill_from_outputs, OUTPUT_DIR, CLAUDE_MODEL
+    )
+    summary = cost_tracker.get_summary()
+    return JSONResponse({"inserted": inserted, "summary": summary})
+
+
+@app.post("/api/costs/budget")
+async def set_costs_budget(request: Request) -> JSONResponse:
+    import channel_settings as _cs
+    body = await request.json()
+    budget = float(body.get("monthly_budget_usd", 50))
+    settings = _cs.load()
+    settings["monthly_budget_usd"] = budget
+    _cs.save(settings)
+    return JSONResponse({"status": "saved", "monthly_budget_usd": budget})
+
+
+# ── Shorts analytics ─────────────────────────────────────────────────────────
+
+@app.get("/api/analytics/shorts")
+async def get_shorts_analytics() -> JSONResponse:
+    """
+    Fetch real YouTube Shorts analytics:
+    - Per-short: views, likes, comments, duration, CTR, avg view pct
+    - Aggregated: total views, total likes, avg engagement, best short
+    Uses YouTube Data API v3 (public stats) + OAuth Analytics (if available).
+    """
+    vids = _scan_videos()
+    shorts = [
+        (v["slug"], v.get("short_video_id"))
+        for v in vids
+        if v.get("short_video_id")
+    ]
+    if not shorts:
+        return JSONResponse({"shorts": [], "summary": {}, "error": None})
+
+    def _fetch() -> dict:
+        from config import YOUTUBE_API_KEY
+        from googleapiclient.discovery import build as _build
+
+        results = []
+
+        # ── Public stats via Data API v3 (no OAuth needed) ──────────────────
+        if YOUTUBE_API_KEY:
+            try:
+                yt = _build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+                id_map = {sid: slug for slug, sid in shorts if sid}
+                all_ids = list(id_map.keys())
+
+                for i in range(0, len(all_ids), 50):
+                    batch = all_ids[i:i + 50]
+                    resp  = yt.videos().list(
+                        part="statistics,snippet,contentDetails",
+                        id=",".join(batch),
+                    ).execute()
+                    for item in resp.get("items", []):
+                        sid     = item["id"]
+                        slug    = id_map.get(sid, "")
+                        s       = item.get("statistics", {})
+                        snippet = item.get("snippet", {})
+                        dur_s   = _parse_iso_duration(
+                            item.get("contentDetails", {}).get("duration", "")
+                        )
+                        views    = int(s.get("viewCount",   0))
+                        likes    = int(s.get("likeCount",   0))
+                        comments = int(s.get("commentCount",0))
+                        eng_rate = round((likes + comments) / max(views, 1) * 100, 2)
+                        results.append({
+                            "slug":         slug,
+                            "short_id":     sid,
+                            "title":        snippet.get("title", slug),
+                            "published_at": snippet.get("publishedAt", ""),
+                            "thumbnail":    (snippet.get("thumbnails", {})
+                                             .get("medium", {}).get("url", "")),
+                            "views":        views,
+                            "likes":        likes,
+                            "comments":     comments,
+                            "duration_s":   dur_s,
+                            "eng_rate":     eng_rate,
+                            "url":          f"https://youtube.com/shorts/{sid}",
+                        })
+            except Exception as exc:
+                logger.error(f"Shorts analytics (public): {exc}")
+
+        # ── OAuth Analytics: impressions + CTR + avg view % ─────────────────
+        if YOUTUBE_TOKEN_FILE.exists() and results:
+            try:
+                from upload import SCOPES
+                from google.oauth2.credentials import Credentials
+                from googleapiclient.discovery import build as _build2
+                from datetime import date, timedelta
+
+                creds = Credentials.from_authorized_user_file(str(YOUTUBE_TOKEN_FILE), SCOPES)
+                ya    = _build2("youtubeAnalytics", "v2", credentials=creds)
+
+                end_dt   = date.today()
+                start_dt = end_dt - timedelta(days=90)
+
+                for item in results:
+                    sid = item["short_id"]
+                    try:
+                        r = ya.reports().query(
+                            ids="channel==MINE",
+                            startDate=str(start_dt),
+                            endDate=str(end_dt),
+                            metrics="views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage",
+                            filters=f"video=={sid}",
+                        ).execute()
+                        row = (r.get("rows") or [[]])[0]
+                        if row:
+                            item["analytics_views"]    = int(row[0])   if len(row) > 0 else 0
+                            item["watch_minutes"]      = round(float(row[1]), 1) if len(row) > 1 else 0
+                            item["avg_view_duration_s"]= round(float(row[2]), 1) if len(row) > 2 else 0
+                            item["avg_view_pct"]       = round(float(row[3]), 1) if len(row) > 3 else 0
+                    except Exception:
+                        pass
+            except Exception as exc:
+                logger.error(f"Shorts analytics (OAuth): {exc}")
+
+        # ── Summary ─────────────────────────────────────────────────────────
+        total_views    = sum(r.get("views", 0) for r in results)
+        total_likes    = sum(r.get("likes", 0) for r in results)
+        total_comments = sum(r.get("comments", 0) for r in results)
+        avg_eng        = round(sum(r.get("eng_rate", 0) for r in results) / max(len(results), 1), 2)
+        best           = max(results, key=lambda x: x.get("views", 0), default=None)
+
+        results.sort(key=lambda x: x.get("views", 0), reverse=True)
+
+        return {
+            "shorts": results,
+            "summary": {
+                "total_shorts":   len(results),
+                "total_views":    total_views,
+                "total_likes":    total_likes,
+                "total_comments": total_comments,
+                "avg_engagement": avg_eng,
+                "best_short":     best.get("title", "") if best else "",
+                "best_views":     best.get("views", 0) if best else 0,
+            },
+            "error": None,
+        }
+
+    data = await asyncio.to_thread(_fetch)
+    return JSONResponse(data)
+
+
 # ── CSV export ────────────────────────────────────────────────────────────────
 
 @app.get("/api/analytics/export.csv")
@@ -1407,6 +1913,779 @@ async def export_analytics_csv():
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=ytauto_videos.csv"},
     )
+
+
+# ── Goal system endpoints ─────────────────────────────────────────────────────
+
+@app.get("/api/goals")
+async def get_goals() -> JSONResponse:
+    return JSONResponse(_goals.get_summary())
+
+
+@app.post("/api/goals")
+async def create_goal_endpoint(request: Request) -> JSONResponse:
+    body = await request.json()
+    try:
+        g = _goals.create_goal(
+            goal_type=body["type"],
+            target=float(body["target"]),
+            title=body.get("title", ""),
+            deadline=body.get("deadline", ""),
+            notes=body.get("notes", ""),
+        )
+        await _broadcast({"type": "goals_update", "goals": _goals.get_summary()})
+        return JSONResponse(g)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@app.delete("/api/goals/{goal_id}")
+async def delete_goal_endpoint(goal_id: str) -> JSONResponse:
+    ok = _goals.delete_goal(goal_id)
+    await _broadcast({"type": "goals_update", "goals": _goals.get_summary()})
+    return JSONResponse({"deleted": ok})
+
+
+@app.patch("/api/goals/{goal_id}")
+async def update_goal_endpoint(goal_id: str, request: Request) -> JSONResponse:
+    body = await request.json()
+    g = _goals.update_goal(goal_id, **body)
+    if not g:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    await _broadcast({"type": "goals_update", "goals": _goals.get_summary()})
+    return JSONResponse(g)
+
+
+@app.post("/api/goals/analyze")
+async def analyze_channel_goals() -> JSONResponse:
+    """Agent analyzes channel state and auto-creates smart personalized goals."""
+    stats = _build_goal_stats()
+    ins   = _agent.get_insights()
+    result = await asyncio.to_thread(_goals.analyze_and_generate_goals, stats, ins)
+    await _broadcast({"type": "goals_update", "goals": _goals.get_summary()})
+    return JSONResponse(result)
+
+
+@app.post("/api/goals/check")
+async def trigger_goal_check() -> JSONResponse:
+    newly = await asyncio.to_thread(_run_goal_check)
+    return JSONResponse({"newly_completed": len(newly), "goals": _goals.get_summary()})
+
+
+def _build_goal_stats() -> dict:
+    """Collect current channel stats into the unified stats dict used by goal system."""
+    stats: dict = {}
+    try:
+        vids = _scan_videos()
+        stats["upload_count"]    = sum(1 for v in vids if v.get("video_id"))
+        stats["monthly_uploads"] = _count_monthly_uploads(vids)
+    except Exception:
+        pass
+    try:
+        import cost_tracker as _ct
+        cs = _ct.get_summary()
+        stats["monthly_api_cost"] = cs.get("this_month_cost_usd", 0)
+    except Exception:
+        pass
+    if _cached_analytics:
+        ca  = _cached_analytics.get("channel_analytics", {})
+        ch  = _cached_analytics.get("channel", {})
+        sum_data = _cached_analytics.get("summary", {})
+        stats["subscribers"]   = ch.get("subscribers", 0)
+        stats["total_views"]   = ch.get("total_views", 0)
+        stats["watch_hours"]   = round(ca.get("estimatedMinutesWatched", 0) / 60, 1)
+        stats["monthly_views"] = int(ca.get("views", 0))
+        stats["ctr"]           = float(ca.get("impressionClickThroughRate", 0) or 0) / 100
+        # YPP percent (worst of the two criteria)
+        sub_pct = min(100, stats["subscribers"] / 10)   # /1000 * 100 simplified
+        wh_pct  = min(100, stats["watch_hours"] / 40)   # /4000 * 100 simplified
+        stats["ypp_pct"] = round(min(sub_pct, wh_pct), 1)
+    try:
+        pvdata = _cached_analytics.get("videos", [])
+        stats["total_likes"]    = sum(int(v.get("likes", 0)) for v in pvdata)
+        stats["total_comments"] = sum(int(v.get("comments", 0)) for v in pvdata)
+        if pvdata:
+            total_v = sum(int(v.get("views", 0)) for v in pvdata)
+            stats["avg_views_per_video"] = total_v // len(pvdata)
+    except Exception:
+        pass
+    return stats
+
+
+def _run_goal_check() -> list[dict]:
+    """Collect current stats and run goal completion check."""
+    stats = _build_goal_stats()
+    newly = _goals.check_all_goals(stats)
+    for g in newly:
+        try:
+            from telegram_bot import notify_goal_complete
+            notify_goal_complete(g["title"], g["target"], g["unit"])
+        except Exception:
+            pass
+        asyncio.get_event_loop().call_soon_threadsafe(
+            asyncio.ensure_future,
+            _broadcast({"type": "goal_completed", "goal": g, "goals": _goals.get_summary()})
+        )
+    return newly
+
+
+def _count_monthly_uploads(vids: list) -> int:
+    import datetime as _dt
+    month = _dt.datetime.now().strftime("%Y-%m")
+    return sum(1 for v in vids if (v.get("upload_date") or "").startswith(month))
+
+
+async def _goal_checker_loop() -> None:
+    """
+    Check goals every hour.
+    Every 4th run (~4 hours) also re-fetch YouTube Analytics so watch_hours
+    and subscriber counts are always real, not stale.
+    """
+    global _cached_analytics
+    _run_count = 0
+    while True:
+        try:
+            await asyncio.sleep(3600)
+            _run_count += 1
+            # Refresh analytics every 4 runs so goal stats are accurate
+            if _run_count % 4 == 0 and YOUTUBE_TOKEN_FILE.exists():
+                try:
+                    data = await asyncio.to_thread(_fetch_full_analytics)
+                    _cached_analytics = {"connected": True, **data}
+                    logger.info("Goal checker: refreshed analytics")
+                except Exception as exc:
+                    logger.debug(f"Goal checker analytics refresh: {exc}")
+            await asyncio.to_thread(_run_goal_check)
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.debug(f"Goal checker error: {exc}")
+
+
+# ── Agent auto-learn settings + loop ─────────────────────────────────────────
+
+_AGENT_SETTINGS_FILE = BASE / "agent_settings.json"
+_AGENT_LEARN_DEFAULT = {
+    "auto_learn":         True,
+    "interval_hours":     6,
+    "auto_analyze_goals": True,    # run goal analysis after each learn cycle
+    "last_learn_at":      "",
+    "last_learn_count":   0,
+    "next_learn_at":      "",
+}
+
+
+def _agent_settings_load() -> dict:
+    if _AGENT_SETTINGS_FILE.exists():
+        try:
+            saved = json.loads(_AGENT_SETTINGS_FILE.read_text(encoding="utf-8"))
+            return {**_AGENT_LEARN_DEFAULT, **saved}
+        except Exception:
+            pass
+    return dict(_AGENT_LEARN_DEFAULT)
+
+
+def _agent_settings_save(s: dict) -> None:
+    _AGENT_SETTINGS_FILE.write_text(
+        json.dumps(s, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+async def _agent_auto_learn_loop() -> None:
+    """
+    Periodically pull YouTube stats into agent memory and run goal check.
+    Interval is read from agent_settings.json so it can be changed at runtime.
+    Fires once on startup after a short delay, then on the configured schedule.
+    """
+    import datetime as _dt
+
+    # Initial delay — wait 60 s so the server is fully up before the first run
+    await asyncio.sleep(60)
+
+    while True:
+        cfg = _agent_settings_load()
+        if not cfg.get("auto_learn", True):
+            # Auto-learn disabled — sleep a bit and re-check the setting
+            await asyncio.sleep(300)
+            continue
+
+        try:
+            logger.info("Agent auto-learn: starting scheduled learn cycle")
+            await _broadcast({"type": "log", "level": "INFO",
+                              "text": "🤖 Agent: auto-learn cycle starting…"})
+            await _agent_learn_task()
+
+            # Optionally run smart goal analysis after learning
+            cfg = _agent_settings_load()   # reload in case changed
+            if cfg.get("auto_analyze_goals", True):
+                stats = _build_goal_stats()
+                ins   = _agent.get_insights()
+                result = await asyncio.to_thread(_goals.analyze_and_generate_goals, stats, ins)
+                new_count = len(result.get("created", []))
+                if new_count:
+                    await _broadcast({"type": "goals_update",
+                                      "goals": _goals.get_summary()})
+                    await _broadcast({
+                        "type": "log", "level": "INFO",
+                        "text": f"🎯 Agent: created {new_count} new goal(s) from analysis",
+                    })
+
+            # Record last-run time and schedule next
+            now_iso = _dt.datetime.utcnow().isoformat()
+            interval_h = int(cfg.get("interval_hours", 6))
+            next_iso = (_dt.datetime.utcnow() +
+                        _dt.timedelta(hours=interval_h)).isoformat()
+            cfg["last_learn_at"] = now_iso
+            cfg["next_learn_at"] = next_iso
+            _agent_settings_save(cfg)
+
+            await _broadcast({
+                "type":          "agent_status",
+                "last_learn_at": now_iso,
+                "next_learn_at": next_iso,
+                "interval_hours": interval_h,
+                "auto_learn":    True,
+            })
+            logger.info(f"Agent auto-learn: done. Next run at {next_iso}")
+
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.warning(f"Agent auto-learn loop error: {exc}")
+
+        # Sleep until next cycle
+        cfg = _agent_settings_load()
+        interval_h = int(cfg.get("interval_hours", 6))
+        await asyncio.sleep(interval_h * 3600)
+
+
+# ── Agent memory endpoints ────────────────────────────────────────────────────
+
+@app.get("/api/agent/settings")
+async def get_agent_settings() -> JSONResponse:
+    return JSONResponse(_agent_settings_load())
+
+
+@app.post("/api/agent/settings")
+async def save_agent_settings(request: Request) -> JSONResponse:
+    body = await request.json()
+    cfg  = _agent_settings_load()
+    allowed = {"auto_learn", "interval_hours", "auto_analyze_goals"}
+    for k, v in body.items():
+        if k in allowed:
+            cfg[k] = v
+    _agent_settings_save(cfg)
+    return JSONResponse(cfg)
+
+
+@app.get("/api/agent/insights")
+async def get_agent_insights() -> JSONResponse:
+    cfg = _agent_settings_load()
+    return JSONResponse({
+        "insights":           _agent.get_insights(),
+        "top_topics":         _agent.get_top_topics(15),
+        "recommendations":    _agent.get_recommendations(6),
+        "memory_size":        len(_agent.get_all().get("videos", {})),
+        "auto_learn":         cfg.get("auto_learn", True),
+        "interval_hours":     cfg.get("interval_hours", 6),
+        "auto_analyze_goals": cfg.get("auto_analyze_goals", True),
+        "last_learn_at":      cfg.get("last_learn_at", ""),
+        "next_learn_at":      cfg.get("next_learn_at", ""),
+    })
+
+
+@app.post("/api/agent/learn")
+async def trigger_agent_learn() -> JSONResponse:
+    """Pull latest per-video stats from YouTube and update agent memory."""
+    asyncio.create_task(_agent_learn_task())
+    return JSONResponse({"status": "started"})
+
+
+async def _agent_learn_task() -> None:
+    await _task_start("agent_learn", "research", "", "Agent: syncing YouTube performance…")
+    try:
+        from config import YOUTUBE_API_KEY
+        if not YOUTUBE_API_KEY:
+            return
+        vids = _scan_videos()
+        uploaded = [(v["slug"], v["video_id"]) for v in vids if v.get("video_id")]
+        if not uploaded:
+            return
+        from googleapiclient.discovery import build
+        yt = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+        id_map = {vid_id: slug for slug, vid_id in uploaded}
+        records = []
+        for i in range(0, len(id_map), 50):
+            batch = list(id_map.keys())[i:i+50]
+            resp  = yt.videos().list(part="statistics,snippet,contentDetails", id=",".join(batch)).execute()
+            for item in resp.get("items", []):
+                vid_id = item["id"]
+                slug   = id_map.get(vid_id, "")
+                s      = item.get("statistics", {})
+                pub    = item["snippet"].get("publishedAt", "")[:10]
+                dur    = _parse_iso_duration(item.get("contentDetails", {}).get("duration", ""))
+                script_words = 0
+                sp = OUTPUT_DIR / slug / "script.txt"
+                if sp.exists():
+                    try:
+                        script_words = len(sp.read_text(encoding="utf-8").split())
+                    except Exception:
+                        pass
+                records.append({
+                    "slug": slug, "keyword": slug.replace("_", " "),
+                    "views": int(s.get("viewCount", 0)),
+                    "likes": int(s.get("likeCount", 0)),
+                    "comments": int(s.get("commentCount", 0)),
+                    "duration_s": dur,
+                    "upload_date": pub,
+                    "script_words": script_words,
+                })
+        count = await asyncio.to_thread(_agent.record_batch, records)
+        await _broadcast({"type": "log", "level": "INFO",
+                          "text": f"🤖 Agent: learned from {count} videos"})
+        await _broadcast({"type": "agent_updated",
+                          "insights": _agent.get_insights(),
+                          "recommendations": _agent.get_recommendations()})
+        # Also run goal check with fresh data
+        await asyncio.to_thread(_run_goal_check)
+    except Exception as exc:
+        await _broadcast({"type": "log", "level": "ERROR",
+                          "text": f"Agent learn failed: {exc}"})
+    finally:
+        await _task_end("agent_learn")
+
+
+# ── Channel SEO Optimizer ─────────────────────────────────────────────────────
+
+_CHANNEL_SEO_FILE = BASE / "channel_seo.json"
+
+
+def _channel_seo_load() -> dict:
+    if _CHANNEL_SEO_FILE.exists():
+        try:
+            return json.loads(_CHANNEL_SEO_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+def _channel_seo_save(data: dict) -> None:
+    _CHANNEL_SEO_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+@app.get("/api/channel-seo")
+async def get_channel_seo() -> JSONResponse:
+    """Return the last saved/applied channel SEO data."""
+    return JSONResponse(_channel_seo_load())
+
+
+@app.get("/api/channel-seo/current")
+async def fetch_current_channel_seo() -> JSONResponse:
+    """
+    Fetch the LIVE channel description + keywords directly from YouTube API.
+    All work runs in a thread (same pattern as _fetch_full_analytics) to avoid
+    blocking the event loop with synchronous googleapiclient discovery calls.
+    """
+    if not YOUTUBE_TOKEN_FILE.exists():
+        return JSONResponse({"error": "YouTube not connected", "connected": False}, status_code=400)
+
+    def _do_fetch() -> dict:
+        import shlex
+        import traceback
+        from datetime import datetime as _dt
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build as _build
+        from upload import SCOPES
+
+        try:
+            creds = Credentials.from_authorized_user_file(str(YOUTUBE_TOKEN_FILE), SCOPES)
+            yt    = _build("youtube", "v3", credentials=creds)
+            resp  = yt.channels().list(
+                part="snippet,brandingSettings,statistics",
+                mine=True,
+            ).execute()
+
+            items = resp.get("items", [])
+            if not items:
+                return {"connected": False, "error": "No channel found for this account"}
+
+            item     = items[0]
+            snippet  = item.get("snippet", {})
+            branding = item.get("brandingSettings", {}).get("channel", {})
+            stats    = item.get("statistics", {})
+
+            raw_kw = branding.get("keywords", "")
+            try:
+                kw_list = shlex.split(raw_kw) if raw_kw else []
+            except Exception:
+                kw_list = [k.strip().strip('"') for k in raw_kw.split('"') if k.strip()]
+
+            return {
+                "connected":    True,
+                "channel_id":   item["id"],
+                "channel_name": snippet.get("title", ""),
+                "description":  branding.get("description", "") or snippet.get("description", ""),
+                "keywords":     kw_list,
+                "country":      branding.get("country", ""),
+                "subscribers":  int(stats.get("subscriberCount", 0)),
+                "video_count":  int(stats.get("videoCount", 0)),
+                "view_count":   int(stats.get("viewCount", 0)),
+                "fetched_at":   _dt.utcnow().isoformat(),
+            }
+        except Exception as exc:
+            tb = traceback.format_exc()
+            logger.error(f"Channel SEO current fetch (thread): {exc}\n{tb}")
+            return {"connected": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    result = await asyncio.to_thread(_do_fetch)
+    if result.get("connected"):
+        return JSONResponse(result)
+    return JSONResponse(result, status_code=500)
+
+
+@app.post("/api/channel-seo/analyze")
+async def analyze_channel_seo(request: Request) -> JSONResponse:
+    """
+    Step 1: Analyze the current channel SEO and identify what's wrong.
+    Returns structured analysis without generating a replacement yet.
+    """
+    body = await request.json()
+    current_desc = body.get("current_description", "")
+    current_kws  = body.get("current_keywords", [])
+
+    try:
+        import anthropic
+        from config import ANTHROPIC_API_KEY, CLAUDE_MODEL
+        from cost_tracker import log_usage
+
+        kw_str = ", ".join(current_kws[:15]) if current_kws else "(none)"
+        # Truncate description to first 800 chars to keep prompt tokens low
+        desc_preview = (current_desc or "(empty)")[:800]
+        prompt = f"""YouTube SEO audit. Return ONLY compact JSON, no markdown.
+
+DESCRIPTION: {desc_preview}
+KEYWORDS: {kw_str}
+
+JSON (keep each array to max 3 short items):
+{{"overall_grade":"A/B/C/D/F","overall_score":0-100,"description_issues":["..."],"keyword_issues":["..."],"missing_elements":["..."],"strengths":["..."],"priority_fixes":["fix1","fix2","fix3"],"verdict":"one sentence"}}"""
+
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        resp   = await asyncio.to_thread(
+            client.messages.create,
+            model=CLAUDE_MODEL,
+            max_tokens=600,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+
+        try:
+            analysis = json.loads(raw)
+        except json.JSONDecodeError:
+            # Try to repair truncated JSON by closing open structures
+            try:
+                fixed = raw.rstrip().rstrip(",")
+                # Close any open arrays/objects
+                open_brackets = fixed.count("[") - fixed.count("]")
+                open_braces   = fixed.count("{") - fixed.count("}")
+                fixed += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
+                analysis = json.loads(fixed)
+                logger.info("Channel SEO analyze: repaired truncated JSON")
+            except Exception:
+                logger.warning("Channel SEO analyze: could not repair JSON")
+                analysis = {
+                    "overall_grade": "C", "overall_score": 50,
+                    "description_issues": ["Description needs more keywords and a clear CTA"],
+                    "keyword_issues": ["Add more specific niche keywords"],
+                    "missing_elements": ["Upload schedule mention", "Subscribe CTA"],
+                    "strengths": ["Has a description"],
+                    "priority_fixes": ["Add 15 targeted keywords", "Add upload schedule", "Add subscribe CTA"],
+                    "verdict": "SEO needs improvement — add keywords, schedule, and clear CTA.",
+                }
+
+        try:
+            log_usage(stage="channel_seo_analyze", keyword="channel_seo",
+                      model=CLAUDE_MODEL, input_tokens=resp.usage.input_tokens,
+                      output_tokens=resp.usage.output_tokens)
+        except Exception:
+            pass
+        return JSONResponse(analysis)
+
+    except Exception as exc:
+        logger.error(f"Channel SEO analyze: {exc}")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.post("/api/channel-seo/generate")
+async def generate_channel_seo(request: Request) -> JSONResponse:
+    """
+    Step 2: Generate fully optimized channel SEO content.
+    Accepts current description/keywords so Claude can see what exists and improve it.
+    """
+    body = await request.json()
+    niche                = body.get("niche", "") or ""
+    channel_name         = body.get("channel_name", "") or "My Channel"
+    seed_topics          = body.get("seed_topics", []) or []
+    top_videos           = body.get("top_videos", []) or []
+    subscriber_count     = int(body.get("subscriber_count", 0))
+    video_count          = int(body.get("video_count", 0))
+    custom_notes         = body.get("custom_notes", "") or ""
+    current_description  = body.get("current_description", "") or ""
+    current_keywords     = body.get("current_keywords", []) or []
+    analysis             = body.get("analysis", {}) or {}
+
+    try:
+        import anthropic
+        from config import ANTHROPIC_API_KEY, CLAUDE_MODEL, CHANNEL_NICHE
+        from cost_tracker import log_usage
+
+        effective_niche = niche or CHANNEL_NICHE
+        topics_str      = ", ".join(seed_topics[:10]) if seed_topics else effective_niche
+        top_vids_str    = "\n".join(
+            f"  - {v.get('keyword', v.get('slug',''))}: {v.get('views', 0)} views"
+            for v in top_videos[:5]
+        ) if top_videos else "  (no data yet)"
+
+        current_block = ""
+        if current_description:
+            current_block = f"""
+CURRENT DESCRIPTION (what the channel has now — improve this):
+\"\"\"{current_description}\"\"\"
+
+CURRENT KEYWORDS: {', '.join(current_keywords) if current_keywords else '(none)'}
+
+ANALYSIS ISSUES TO FIX: {'; '.join(analysis.get('priority_fixes', [])) if analysis else ''}
+"""
+
+        prompt = f"""You are a YouTube channel SEO expert. Generate fully optimized channel content.
+{current_block}
+Channel Name: {channel_name}
+Niche: {effective_niche}
+Stats: {subscriber_count} subscribers, {video_count} videos published
+Seed topics: {topics_str}
+Top performing videos (real YouTube data):
+{top_vids_str}
+{f"Notes: {custom_notes}" if custom_notes else ""}
+
+{"TASK: The current description has problems. Write a SIGNIFICANTLY BETTER version that fixes all identified issues." if current_description else "TASK: The channel has no description. Write a complete optimized version from scratch."}
+
+Return ONLY valid JSON (no markdown):
+{{
+  "description": "800-1000 character channel description. Open with value proposition. Embed 8-12 keywords naturally. Mention upload frequency. Close with subscribe CTA. Must be human-readable, NOT spammy.",
+  "keywords": ["kw1","kw2",...],
+  "improvement_notes": ["What was changed vs current and why", "..."],
+  "trailer_hook": "30-second spoken channel trailer hook. Problem → solution → who it's for → CTA.",
+  "banner_tagline": "Max 8 words. Punchy. Memorable.",
+  "about_links": [{{"label": "...", "note": "..."}}],
+  "featured_sections": [{{"title": "...", "type": "playlist|channel", "note": "..."}}],
+  "seo_tips": ["Tip 1", "Tip 2", "Tip 3", "Tip 4", "Tip 5"]
+}}
+
+keywords: exactly 15 entries, mix broad + long-tail, ordered by search volume importance."""
+
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        resp   = await asyncio.to_thread(
+            client.messages.create,
+            model=CLAUDE_MODEL,
+            max_tokens=2200,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+
+        seo_data = json.loads(raw)
+        try:
+            log_usage(stage="channel_seo", keyword="channel_seo",
+                      model=CLAUDE_MODEL, input_tokens=resp.usage.input_tokens,
+                      output_tokens=resp.usage.output_tokens)
+        except Exception:
+            pass
+
+        result = {
+            **seo_data,
+            "generated_at":       __import__("datetime").datetime.utcnow().isoformat(),
+            "applied":            False,
+            "channel_name":       channel_name,
+            "niche":              effective_niche,
+            "current_description": current_description,
+            "current_keywords":   current_keywords,
+        }
+        _channel_seo_save(result)
+        return JSONResponse(result)
+
+    except json.JSONDecodeError as exc:
+        return JSONResponse({"error": f"AI returned invalid JSON: {exc}", "raw": raw[:500]}, status_code=500)
+    except Exception as exc:
+        logger.error(f"Channel SEO generate error: {exc}")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.post("/api/channel-seo/apply")
+async def apply_channel_seo(request: Request) -> JSONResponse:
+    """
+    Apply the generated SEO data to the live YouTube channel via API:
+    - Updates channel description (brandingSettings.channel.description)
+    - Updates channel keywords (brandingSettings.channel.keywords)
+    """
+    if not YOUTUBE_TOKEN_FILE.exists():
+        return JSONResponse({"error": "YouTube not connected"}, status_code=400)
+
+    body      = await request.json()
+    desc      = body.get("description", "").strip()
+    keywords  = body.get("keywords", [])
+
+    if not desc:
+        return JSONResponse({"error": "description is required"}, status_code=400)
+
+    try:
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+
+        creds = Credentials.from_authorized_user_file(str(YOUTUBE_TOKEN_FILE), [
+            "https://www.googleapis.com/auth/youtube",
+            "https://www.googleapis.com/auth/youtube.force-ssl",
+        ])
+        yt = build("youtube", "v3", credentials=creds)
+
+        # Fetch current channel ID
+        ch_resp = await asyncio.to_thread(
+            lambda: yt.channels().list(part="id,brandingSettings", mine=True).execute()
+        )
+        items = ch_resp.get("items", [])
+        if not items:
+            return JSONResponse({"error": "Could not fetch channel"}, status_code=500)
+
+        channel_id = items[0]["id"]
+        # Build update body — preserve existing fields, only patch description + keywords
+        branding = items[0].get("brandingSettings", {})
+        ch_branding = branding.get("channel", {})
+        ch_branding["description"] = desc[:1000]
+        if keywords:
+            ch_branding["keywords"] = " ".join(f'"{k}"' if " " in k else k for k in keywords[:15])
+
+        update_body = {
+            "id": channel_id,
+            "brandingSettings": {
+                **branding,
+                "channel": ch_branding,
+            },
+        }
+
+        result = await asyncio.to_thread(
+            lambda: yt.channels().update(
+                part="brandingSettings",
+                body=update_body,
+            ).execute()
+        )
+
+        # Save applied state
+        saved = _channel_seo_load()
+        saved["applied"] = True
+        saved["applied_at"] = __import__("datetime").datetime.utcnow().isoformat()
+        saved["applied_description"] = desc
+        saved["applied_keywords"] = keywords
+        _channel_seo_save(saved)
+
+        await _broadcast({"type": "log", "level": "INFO",
+                          "text": "✅ Channel SEO applied to YouTube — description + keywords updated"})
+        return JSONResponse({"ok": True, "channel_id": channel_id})
+
+    except Exception as exc:
+        logger.error(f"Channel SEO apply error: {exc}")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/channel-seo/score")
+async def score_channel_seo(request: Request) -> JSONResponse:
+    """
+    Score the current channel description and keywords against SEO best practices.
+    Returns a score (0-100) with breakdown and tips.
+    """
+    desc     = request.query_params.get("description", "")
+    keywords = request.query_params.get("keywords", "")
+
+    score    = 0
+    issues   = []
+    tips     = []
+
+    # Length check (ideal 700-1000 chars)
+    dlen = len(desc)
+    if dlen >= 700:
+        score += 20
+    elif dlen >= 400:
+        score += 12
+        tips.append("Expand to 700-1000 characters for maximum SEO impact")
+    else:
+        score += 4
+        issues.append(f"Description too short ({dlen} chars) — aim for 700-1000")
+
+    # Has CTA
+    cta_words = ["subscribe", "hit the bell", "click subscribe", "join us", "follow"]
+    if any(w in desc.lower() for w in cta_words):
+        score += 15
+    else:
+        issues.append("Missing subscribe CTA in description")
+
+    # Has upload schedule mention
+    schedule_words = ["every week", "weekly", "every day", "daily", "every month", "monday", "tuesday", "wednesday", "thursday", "friday"]
+    if any(w in desc.lower() for w in schedule_words):
+        score += 10
+    else:
+        tips.append("Mention your upload schedule to set viewer expectations")
+
+    # Has links / social mention
+    link_words = ["instagram", "twitter", "tiktok", "link in", "discord", "newsletter", "website", "check out"]
+    if any(w in desc.lower() for w in link_words):
+        score += 10
+    else:
+        tips.append("Add social media links or community links")
+
+    # Keywords present in description
+    kw_list = [k.strip().lower() for k in keywords.split(",") if k.strip()]
+    kws_in_desc = sum(1 for k in kw_list if k in desc.lower())
+    if kw_list:
+        kw_ratio = kws_in_desc / len(kw_list)
+        score += int(kw_ratio * 20)
+        if kw_ratio < 0.3:
+            tips.append("Embed more of your keywords naturally in the description")
+
+    # Keywords count
+    if len(kw_list) >= 12:
+        score += 15
+    elif len(kw_list) >= 8:
+        score += 10
+        tips.append("Add more keywords (aim for 12-15)")
+    elif len(kw_list) > 0:
+        score += 5
+        issues.append(f"Only {len(kw_list)} keywords — add more (12-15 ideal)")
+    else:
+        issues.append("No keywords provided")
+
+    # First 150 chars are most important (appear in Google snippets)
+    if desc and len(desc) > 0:
+        first_150 = desc[:150].lower()
+        niche_words = keywords.lower().split(",")[:3] if keywords else []
+        if any(nw.strip() in first_150 for nw in niche_words):
+            score += 10
+        else:
+            tips.append("Put your most important keyword in the first 150 characters")
+
+    score = min(100, score)
+    grade = "A" if score >= 85 else "B" if score >= 70 else "C" if score >= 50 else "D"
+
+    return JSONResponse({
+        "score":  score,
+        "grade":  grade,
+        "issues": issues,
+        "tips":   tips,
+        "length": dlen,
+        "kw_count": len(kw_list),
+        "kws_in_desc": kws_in_desc,
+    })
 
 
 # ── Telegram command listener ──────────────────────────────────────────────────

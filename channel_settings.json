@@ -14,5 +14,6 @@
   "auto_reply_tone": "friendly",
   "auto_reply_on_upload": true,
   "auto_short_on_upload": true,
-  "short_hook_style": "question"
+  "short_hook_style": "question",
+  "monthly_budget_usd": 100.0
 }

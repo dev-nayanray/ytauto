@@ -111,6 +111,19 @@ def generate_script(keyword: str, output_path: Path) -> str:
         messages=[{"role": "user", "content": prompt}],
     )
 
+    try:
+        from cost_tracker import log_usage
+        log_usage(
+            stage="script",
+            model=CLAUDE_MODEL,
+            input_tokens=message.usage.input_tokens,
+            output_tokens=message.usage.output_tokens,
+            slug=output_path.parent.name,
+            keyword=keyword,
+        )
+    except Exception:
+        pass
+
     script_text: str = message.content[0].text
     word_count = len(script_text.split())
     output_path.write_text(script_text, encoding="utf-8")

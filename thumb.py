@@ -268,7 +268,9 @@ def _style_split_screen(img: Image.Image, title: str) -> Image.Image:
         alpha = int(230 * (1 - t * 0.3))
         ld.line([(x, 0), (x, THUMB_H)], fill=(r, g, b, alpha))
 
-    result = Image.alpha_composite(result.convert("RGBA"), left_panel.resize((panel_w, THUMB_H)))
+    canvas = Image.new("RGBA", (THUMB_W, THUMB_H), (0, 0, 0, 0))
+    canvas.paste(left_panel, (0, 0))
+    result = Image.alpha_composite(result.convert("RGBA"), canvas)
     result = result.convert("RGB")
     draw = ImageDraw.Draw(result)
 
